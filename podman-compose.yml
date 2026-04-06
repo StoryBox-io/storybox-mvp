@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  app:
+    image: elixir:1.16-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgres://storybox:storybox@db:5432/storybox_dev
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: storybox
+      MINIO_SECRET_KEY: storybox_secret
+      MINIO_BUCKET: storybox-pieces
+      PHX_HOST: localhost
+      SECRET_KEY_BASE: dev_secret_key_base_replace_in_production
+    depends_on:
+      - db
+      - minio
+    command: sh -c "mix local.hex --force && mix deps.get && mix phx.server"
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: storybox
+      POSTGRES_PASSWORD: storybox
+      POSTGRES_DB: storybox_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: storybox
+      MINIO_ROOT_PASSWORD: storybox_secret
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+volumes:
+  postgres_data:
+  minio_data:
