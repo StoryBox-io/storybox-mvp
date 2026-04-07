@@ -14,6 +14,7 @@ else
     username: "storybox",
     password: "storybox",
     hostname: "localhost",
+    port: 5433,
     database: "storybox_dev",
     stacktrace: true,
     show_sensitive_data_on_connection_error: true,

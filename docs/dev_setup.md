@@ -28,11 +28,14 @@ Create a bucket named `storybox-pieces` on first run (or via the setup task once
 
 ```
 host:     localhost
-port:     5432
+port:     5433
 database: storybox_dev
 user:     storybox
 password: storybox
 ```
+
+> Port 5433 is used on the host to avoid conflict with any local PostgreSQL installation.
+> Inside the Podman network, the app container connects to `db:5432` as normal.
 
 ## App Setup (once scaffolded)
 
