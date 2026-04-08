@@ -23,6 +23,7 @@ defmodule Storybox.Stories.Story do
     belongs_to :user, Storybox.Accounts.User, allow_nil?: false, public?: true
     has_many :characters, Storybox.Stories.Character, public?: true
     has_one :world, Storybox.Stories.World, public?: true
+    has_many :synopsis_versions, Storybox.Stories.SynopsisVersion, public?: true
   end
 
   actions do
