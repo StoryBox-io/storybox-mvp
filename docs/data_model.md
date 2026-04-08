@@ -8,8 +8,6 @@ id
 title
 logline
 controlling_idea
-statuses:       [:array, :string]   # configurable, default ["draft","working","approved"]
-publish_on:     :string             # which status triggers published, default "approved"
 through_lines:  [:array, :string]   # default ["preference"]
 inserted_at
 updated_at
@@ -79,7 +77,6 @@ content_uri:      :string    # storybox://stories/:id/sequences/:seq_id/v:n
 version_number:   :integer
 weights:          :map        # %{"preference" => 0.9} — empty = unreviewed
 upstream_status:  :atom       # :current | :stale
-status:           :string     # user-configured workflow state
 inserted_at
 
 belongs_to :sequence_piece
@@ -108,7 +105,6 @@ content_uri:      :string   # storybox://stories/:id/scenes/:scene_id/v:n
 version_number:   :integer
 weights:          :map       # %{"preference" => 0.9} — empty = unreviewed
 upstream_status:  :atom      # :current | :stale
-status:           :string
 inserted_at
 
 belongs_to :scene_piece
@@ -149,16 +145,24 @@ inserted_at
 :reviewed           # has weights for all story through_lines
 ```
 
-**Published** (derived from `scene_piece.approved_version_id`):
-```
-scene.approved_version_id == version.id  →  this version is published
-```
-
 **Upstream status** (stored on version):
 ```
 :current   # no unacknowledged upstream changes
 :stale     # has unacknowledged UpstreamChanges
 ```
+
+---
+
+## Tags
+
+Tags are named pointers on a Piece to a specific version. They are how views align to a particular state of a piece.
+
+**`approved_version_id`** (on SequencePiece and ScenePiece):
+- Points to the version considered approved for the `:approved` view
+- Updated by the `:approve_version` action
+- A piece may have no approved version (pointer is nil)
+
+Publishing is not a separate state. Every version that exists is available. The `:approved` view assembles from approved pointers; `:latest` resolves to the highest version number. A `:snapshot` captures a named map of `piece_id → version_id` at a point in time.
 
 ---
 

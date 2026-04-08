@@ -8,8 +8,6 @@ Four independently versioned building blocks. Each is a Platonic ideal — it ex
 - Controlling idea (the argument the story makes)
 - Logline
 - Title
-- Configurable workflow statuses (default: `["draft", "working", "approved"]`)
-- Publish-on status (default: `"approved"`)
 - Through-lines defined on the story (default: `["preference"]`)
 
 ### Character
