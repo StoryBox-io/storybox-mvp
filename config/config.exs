@@ -9,7 +9,9 @@ import Config
 
 config :storybox,
   ecto_repos: [Storybox.Repo],
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime],
+  ash_domains: [Storybox.Accounts],
+  token_signing_secret: "dev-secret-change-in-prod"
 
 # Configures the endpoint
 config :storybox, StoryboxWeb.Endpoint,

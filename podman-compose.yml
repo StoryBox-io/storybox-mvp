@@ -25,6 +25,7 @@ services:
       - minio
     command: >
       sh -c "
+        apk add --no-cache build-base &&
         mix local.hex --force &&
         mix local.rebar --force &&
         mix deps.get &&

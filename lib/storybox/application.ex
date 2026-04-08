@@ -12,6 +12,7 @@ defmodule Storybox.Application do
       Storybox.Repo,
       {DNSCluster, query: Application.get_env(:storybox, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Storybox.PubSub},
+      {AshAuthentication.Supervisor, otp_app: :storybox},
       # Start a worker by calling: Storybox.Worker.start_link(arg)
       # {Storybox.Worker, arg},
       # Start to serve requests, typically the last entry
