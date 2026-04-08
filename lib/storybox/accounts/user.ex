@@ -12,17 +12,19 @@ defmodule Storybox.Accounts.User do
   authentication do
     strategies do
       password :password do
-        identity_field :email
-        hashed_password_field :hashed_password
+        identity_field(:email)
+        hashed_password_field(:hashed_password)
       end
     end
+
     tokens do
-      enabled? true
-      token_resource Storybox.Accounts.Token
-      require_token_presence_for_authentication? true
-      signing_secret fn _, _ ->
-        Application.fetch_env!(:storybox, :token_signing_secret)
-      end
+      enabled?(true)
+      token_resource(Storybox.Accounts.Token)
+      require_token_presence_for_authentication?(true)
+
+      signing_secret(fn _, _ ->
+        Application.fetch_env(:storybox, :token_signing_secret)
+      end)
     end
   end
 
