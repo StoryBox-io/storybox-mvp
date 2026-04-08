@@ -3,5 +3,7 @@ defmodule Storybox.Stories do
 
   resources do
     resource Storybox.Stories.Story
+    resource Storybox.Stories.Character
+    resource Storybox.Stories.World
   end
 end
