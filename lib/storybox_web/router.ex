@@ -19,10 +19,10 @@ defmodule StoryboxWeb.Router do
   scope "/", StoryboxWeb do
     pipe_through :browser
 
-    sign_in_route register_path: "/register", reset_path: "/reset"
-    sign_out_route AuthController
-    auth_routes Storybox.Accounts.User, to: AuthController
-    reset_route []
+    sign_in_route(register_path: "/register", reset_path: "/reset")
+    sign_out_route(AuthController)
+    auth_routes(Storybox.Accounts.User, to: AuthController)
+    reset_route([])
 
     get "/", PageController, :home
   end

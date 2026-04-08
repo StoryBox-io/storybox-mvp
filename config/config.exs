@@ -10,7 +10,7 @@ import Config
 config :storybox,
   ecto_repos: [Storybox.Repo],
   generators: [timestamp_type: :utc_datetime],
-  ash_domains: [Storybox.Accounts],
+  ash_domains: [Storybox.Accounts, Storybox.Stories],
   token_signing_secret: "dev-secret-change-in-prod"
 
 # Configures the endpoint
@@ -54,9 +54,7 @@ config :ex_aws, :s3,
   port: 9000
 
 # Ash formatter plugin
-config :ash, :formatter, [
-  extensions: [Ash.Formatter]
-]
+config :ash, :formatter, extensions: [Ash.Formatter]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
