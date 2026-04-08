@@ -5,5 +5,6 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.Story
     resource Storybox.Stories.Character
     resource Storybox.Stories.World
+    resource Storybox.Stories.SynopsisVersion
   end
 end
