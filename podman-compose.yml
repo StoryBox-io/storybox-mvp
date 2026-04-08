@@ -2,10 +2,13 @@ version: "3.8"
 
 services:
   app:
-    image: elixir:1.16-alpine
+    image: elixir:1.18-alpine
     working_dir: /app
     volumes:
       - .:/app
+      - hex_cache:/root/.hex
+      - mix_cache:/root/.mix
+      - build_cache:/app/_build
     ports:
       - "4000:4000"
     environment:
@@ -16,10 +19,21 @@ services:
       MINIO_BUCKET: storybox-pieces
       PHX_HOST: localhost
       SECRET_KEY_BASE: dev_secret_key_base_replace_in_production
+      MIX_ENV: dev
     depends_on:
       - db
       - minio
-    command: sh -c "mix local.hex --force && mix deps.get && mix phx.server"
+    command: >
+      sh -c "
+        apk add --no-cache build-base &&
+        mix local.hex --force &&
+        mix local.rebar --force &&
+        mix deps.get &&
+        mix ecto.create --quiet &&
+        mix ecto.migrate --quiet &&
+        mix run priv/repo/setup_minio.exs &&
+        mix phx.server
+      "
 
   db:
     image: postgres:16-alpine
@@ -27,10 +41,11 @@ services:
       POSTGRES_USER: storybox
       POSTGRES_PASSWORD: storybox
       POSTGRES_DB: storybox_dev
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
   minio:
     image: minio/minio
@@ -47,3 +62,6 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  hex_cache:
+  mix_cache:
+  build_cache:
