@@ -10,5 +10,6 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.SequenceVersion
     resource Storybox.Stories.ScenePiece
     resource Storybox.Stories.SceneVersion
+    resource Storybox.Stories.ScriptSnapshot
   end
 end
