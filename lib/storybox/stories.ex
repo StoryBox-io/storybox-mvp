@@ -11,5 +11,6 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.ScenePiece
     resource Storybox.Stories.SceneVersion
     resource Storybox.Stories.ScriptSnapshot
+    resource Storybox.Stories.UpstreamChange
   end
 end
