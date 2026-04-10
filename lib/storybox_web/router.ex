@@ -16,6 +16,10 @@ defmodule StoryboxWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :require_api_auth do
+    plug StoryboxWeb.Plugs.ApiAuth
+  end
+
   scope "/", StoryboxWeb do
     pipe_through :browser
 
@@ -27,10 +31,11 @@ defmodule StoryboxWeb.Router do
     get "/", PageController, :home
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", StoryboxWeb do
-  #   pipe_through :api
-  # end
+  scope "/api", StoryboxWeb do
+    pipe_through [:api, :require_api_auth]
+
+    get "/stories/:story_id/ping", ApiController, :ping
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:storybox, :dev_routes) do
