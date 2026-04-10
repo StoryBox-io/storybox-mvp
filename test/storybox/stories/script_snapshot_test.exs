@@ -119,7 +119,7 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
         Storybox.Stories.ScenePiece
         |> Ash.ActionInput.for_action(:create_version, %{
           scene_piece_id: piece1.id,
-          content_uri: "storybox://stories/#{story.id}/scenes/#{piece1.id}/v1"
+          content: "Scene one content"
         })
         |> Ash.run_action()
 
@@ -127,7 +127,7 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
         Storybox.Stories.ScenePiece
         |> Ash.ActionInput.for_action(:create_version, %{
           scene_piece_id: piece2.id,
-          content_uri: "storybox://stories/#{story.id}/scenes/#{piece2.id}/v1"
+          content: "Scene two content"
         })
         |> Ash.run_action()
 
@@ -179,7 +179,7 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
         Storybox.Stories.ScenePiece
         |> Ash.ActionInput.for_action(:create_version, %{
           scene_piece_id: piece_approved.id,
-          content_uri: "storybox://stories/#{story.id}/scenes/#{piece_approved.id}/v1"
+          content: "Approved scene content"
         })
         |> Ash.run_action()
 

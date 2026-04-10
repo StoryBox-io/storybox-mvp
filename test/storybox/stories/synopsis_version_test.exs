@@ -106,4 +106,40 @@ defmodule Storybox.Stories.SynopsisVersionTest do
       assert Enum.any?(versions, &(&1.id == version.id))
     end
   end
+
+  describe "create_version action" do
+    test "creates first version with version_number 1 and correct URI", %{story: story} do
+      assert {:ok, version} =
+               Storybox.Stories.SynopsisVersion
+               |> Ash.ActionInput.for_action(:create_version, %{
+                 story_id: story.id,
+                 content: "A detective story about memory."
+               })
+               |> Ash.run_action()
+
+      assert version.story_id == story.id
+      assert version.version_number == 1
+      assert version.content_uri == Storybox.Storage.uri_for_synopsis(story.id, 1)
+    end
+
+    test "increments version_number for subsequent versions", %{story: story} do
+      {:ok, _v1} =
+        Storybox.Stories.SynopsisVersion
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          content: "First synopsis draft."
+        })
+        |> Ash.run_action()
+
+      assert {:ok, v2} =
+               Storybox.Stories.SynopsisVersion
+               |> Ash.ActionInput.for_action(:create_version, %{
+                 story_id: story.id,
+                 content: "Second synopsis draft."
+               })
+               |> Ash.run_action()
+
+      assert v2.version_number == 2
+    end
+  end
 end

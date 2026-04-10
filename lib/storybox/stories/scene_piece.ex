@@ -43,11 +43,21 @@ defmodule Storybox.Stories.ScenePiece do
 
     action :create_version, :struct do
       constraints instance_of: Storybox.Stories.SceneVersion
-      argument :content_uri, :string, allow_nil?: false
+      argument :content, :string, allow_nil?: false
       argument :scene_piece_id, :uuid, allow_nil?: false
 
       run fn input, _context ->
         piece_id = input.arguments.scene_piece_id
+
+        [piece] =
+          Storybox.Stories.ScenePiece
+          |> Ash.Query.filter(id == ^piece_id)
+          |> Ash.read!(authorize?: false)
+
+        [sequence] =
+          Storybox.Stories.SequencePiece
+          |> Ash.Query.filter(id == ^piece.sequence_piece_id)
+          |> Ash.read!(authorize?: false)
 
         existing_versions =
           Storybox.Stories.SceneVersion
@@ -60,15 +70,19 @@ defmodule Storybox.Stories.ScenePiece do
           |> Enum.max(fn -> 0 end)
           |> Kernel.+(1)
 
-        Storybox.Stories.SceneVersion
-        |> Ash.Changeset.for_create(:create, %{
-          scene_piece_id: input.arguments.scene_piece_id,
-          content_uri: input.arguments.content_uri,
-          version_number: next_version_number,
-          upstream_status: :current,
-          weights: %{}
-        })
-        |> Ash.create(authorize?: false)
+        uri = Storybox.Storage.uri_for_scene(sequence.story_id, piece_id, next_version_number)
+
+        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content) do
+          Storybox.Stories.SceneVersion
+          |> Ash.Changeset.for_create(:create, %{
+            scene_piece_id: piece_id,
+            content_uri: uri,
+            version_number: next_version_number,
+            upstream_status: :current,
+            weights: %{}
+          })
+          |> Ash.create(authorize?: false)
+        end
       end
     end
   end

@@ -86,7 +86,7 @@ defmodule Storybox.Stories.SequencePieceTest do
                Storybox.Stories.SequencePiece
                |> Ash.ActionInput.for_action(:create_version, %{
                  sequence_piece_id: piece.id,
-                 content_uri: "storybox://stories/#{story.id}/sequences/#{piece.id}/v1"
+                 content: "INT. COFFEE SHOP - DAY"
                })
                |> Ash.run_action()
 
@@ -94,6 +94,9 @@ defmodule Storybox.Stories.SequencePieceTest do
       assert version.upstream_status == :current
       assert version.weights == %{}
       assert version.sequence_piece_id == piece.id
+
+      assert version.content_uri ==
+               Storybox.Storage.uri_for_sequence(story.id, piece.id, 1)
     end
 
     test "increments version_number for subsequent versions", %{story: story} do
@@ -110,7 +113,7 @@ defmodule Storybox.Stories.SequencePieceTest do
         Storybox.Stories.SequencePiece
         |> Ash.ActionInput.for_action(:create_version, %{
           sequence_piece_id: piece.id,
-          content_uri: "storybox://stories/#{story.id}/sequences/#{piece.id}/v1"
+          content: "Version one content"
         })
         |> Ash.run_action()
 
@@ -118,7 +121,7 @@ defmodule Storybox.Stories.SequencePieceTest do
                Storybox.Stories.SequencePiece
                |> Ash.ActionInput.for_action(:create_version, %{
                  sequence_piece_id: piece.id,
-                 content_uri: "storybox://stories/#{story.id}/sequences/#{piece.id}/v2"
+                 content: "Version two content"
                })
                |> Ash.run_action()
 
@@ -141,7 +144,7 @@ defmodule Storybox.Stories.SequencePieceTest do
         Storybox.Stories.SequencePiece
         |> Ash.ActionInput.for_action(:create_version, %{
           sequence_piece_id: piece.id,
-          content_uri: "storybox://stories/#{story.id}/sequences/#{piece.id}/v1"
+          content: "Approved content"
         })
         |> Ash.run_action()
 
