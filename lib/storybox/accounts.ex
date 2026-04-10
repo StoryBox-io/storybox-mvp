@@ -4,5 +4,6 @@ defmodule Storybox.Accounts do
   resources do
     resource Storybox.Accounts.User
     resource Storybox.Accounts.Token
+    resource Storybox.Accounts.ApiToken
   end
 end

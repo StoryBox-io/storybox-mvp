@@ -34,6 +34,10 @@ defmodule Storybox.Accounts.User do
     attribute :hashed_password, :string, allow_nil?: true, sensitive?: true
   end
 
+  actions do
+    defaults [:read]
+  end
+
   identities do
     identity :unique_email, [:email]
   end
