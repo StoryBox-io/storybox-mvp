@@ -53,6 +53,8 @@ config :ex_aws, :s3,
   host: "localhost",
   port: 9000
 
+config :storybox, minio_bucket: "storybox-pieces"
+
 # Ash formatter plugin
 config :ash, :formatter, extensions: [Ash.Formatter]
 
