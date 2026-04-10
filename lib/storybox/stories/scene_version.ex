@@ -34,5 +34,9 @@ defmodule Storybox.Stories.SceneVersion do
     create :create do
       accept [:scene_piece_id, :content_uri, :version_number, :upstream_status, :weights]
     end
+
+    update :mark_stale do
+      change set_attribute(:upstream_status, :stale)
+    end
   end
 end

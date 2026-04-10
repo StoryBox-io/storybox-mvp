@@ -1,7 +1,8 @@
 defmodule Storybox.Stories.Story do
   use Ash.Resource,
     domain: Storybox.Stories,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    notifiers: [Storybox.Stories.Notifiers.PropagateUpstreamChange]
 
   postgres do
     table "stories"
