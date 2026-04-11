@@ -36,6 +36,8 @@ defmodule StoryboxWeb.Router do
 
     get "/stories/:story_id/ping", ApiController, :ping
     get "/stories/:story_id/views/synopsis", ApiController, :synopsis_view
+    get "/stories/:story_id/views/treatment", ApiController, :treatment_view
+    get "/stories/:story_id/sequences/:id", ApiController, :sequence_detail
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
