@@ -361,6 +361,123 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  def treatment_diff(conn, params) do
+    story = conn.assigns.current_story
+
+    with {:params, %{"from" => from_str, "to" => to_str}} <- {:params, params},
+         {:parse_from, {from_num, ""}} <- {:parse_from, Integer.parse(from_str)},
+         {:parse_to, {to_num, ""}} <- {:parse_to, Integer.parse(to_str)},
+         {:from_sv, {:ok, from_sv}} when not is_nil(from_sv) <-
+           {:from_sv, load_synopsis_version(story.id, from_num)},
+         {:to_sv, {:ok, to_sv}} when not is_nil(to_sv) <-
+           {:to_sv, load_synopsis_version(story.id, to_num)},
+         {:from_content, {:ok, from_content}} <-
+           {:from_content, Storybox.Storage.get_content(from_sv.content_uri)},
+         {:to_content, {:ok, to_content}} <-
+           {:to_content, Storybox.Storage.get_content(to_sv.content_uri)} do
+      synopsis_diff =
+        List.myers_difference(
+          String.split(from_content, "\n"),
+          String.split(to_content, "\n")
+        )
+        |> Enum.map(fn
+          {:eq, lines} -> %{op: "eq", lines: lines}
+          {:ins, lines} -> %{op: "ins", lines: lines}
+          {:del, lines} -> %{op: "del", lines: lines}
+        end)
+
+      pieces =
+        Storybox.Stories.SequencePiece
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.Query.sort(position: :asc)
+        |> Ash.read!(authorize?: false)
+
+      approved_ids =
+        pieces
+        |> Enum.map(& &1.approved_version_id)
+        |> Enum.reject(&is_nil/1)
+
+      versions_by_id =
+        case approved_ids do
+          [] ->
+            %{}
+
+          ids ->
+            Storybox.Stories.SequenceVersion
+            |> Ash.Query.filter(id in ^ids)
+            |> Ash.read!(authorize?: false)
+            |> Map.new(&{&1.id, &1})
+        end
+
+      {affected, unaffected, new} =
+        Enum.reduce(pieces, {[], [], []}, fn piece, {aff, unaff, new_acc} ->
+          version = versions_by_id[piece.approved_version_id]
+          formatted = format_piece(piece, version)
+
+          cond do
+            is_nil(piece.approved_version_id) -> {aff, unaff, [formatted | new_acc]}
+            version && version.upstream_status == :stale -> {[formatted | aff], unaff, new_acc}
+            true -> {aff, [formatted | unaff], new_acc}
+          end
+        end)
+
+      json(conn, %{
+        story_id: story.id,
+        from_version: from_num,
+        to_version: to_num,
+        synopsis_diff: synopsis_diff,
+        sequences: %{
+          affected: Enum.reverse(affected),
+          unaffected: Enum.reverse(unaffected),
+          new: Enum.reverse(new)
+        }
+      })
+    else
+      {:params, _} ->
+        conn |> put_status(400) |> json(%{error: "from and to version numbers are required"})
+
+      {:parse_from, _} ->
+        conn |> put_status(400) |> json(%{error: "from and to must be integers"})
+
+      {:parse_to, _} ->
+        conn |> put_status(400) |> json(%{error: "from and to must be integers"})
+
+      {:from_sv, {:ok, nil}} ->
+        conn |> put_status(404) |> json(%{error: "synopsis version not found"})
+
+      {:from_sv, _} ->
+        conn |> put_status(500) |> json(%{error: "internal error"})
+
+      {:to_sv, {:ok, nil}} ->
+        conn |> put_status(404) |> json(%{error: "synopsis version not found"})
+
+      {:to_sv, _} ->
+        conn |> put_status(500) |> json(%{error: "internal error"})
+
+      {:from_content, _} ->
+        conn |> put_status(503) |> json(%{error: "content unavailable"})
+
+      {:to_content, _} ->
+        conn |> put_status(503) |> json(%{error: "content unavailable"})
+    end
+  end
+
+  defp load_synopsis_version(story_id, version_number) do
+    Storybox.Stories.SynopsisVersion
+    |> Ash.Query.filter(story_id == ^story_id and version_number == ^version_number)
+    |> Ash.read_one(authorize?: false)
+  end
+
+  defp format_piece(piece, version) do
+    %{
+      id: piece.id,
+      title: piece.title,
+      act: piece.act,
+      position: piece.position,
+      approved_version: format_version(version)
+    }
+  end
+
   defp format_version(nil), do: nil
 
   defp format_version(version) do
