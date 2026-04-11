@@ -20,6 +20,7 @@ defmodule Storybox.Accounts.User do
     tokens do
       enabled?(true)
       token_resource(Storybox.Accounts.Token)
+      store_all_tokens?(true)
       require_token_presence_for_authentication?(true)
 
       signing_secret(fn _, _ ->

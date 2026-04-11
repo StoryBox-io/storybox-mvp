@@ -23,10 +23,10 @@ defmodule StoryboxWeb.Router do
   scope "/", StoryboxWeb do
     pipe_through :browser
 
-    sign_in_route(register_path: "/register", reset_path: "/reset")
+    sign_in_route(register_path: "/register", reset_path: "/reset", auth_routes_prefix: "/auth")
     sign_out_route(AuthController)
-    auth_routes(Storybox.Accounts.User, to: AuthController)
-    reset_route([])
+    auth_routes(AuthController, Storybox.Accounts.User)
+    reset_route(auth_routes_prefix: "/auth")
 
     live_session :authenticated,
       on_mount: AshAuthentication.Phoenix.LiveSession do
