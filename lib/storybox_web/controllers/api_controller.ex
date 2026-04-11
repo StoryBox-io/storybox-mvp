@@ -384,6 +384,78 @@ defmodule StoryboxWeb.ApiController do
     }
   end
 
+  def create_sequence_version(conn, %{"id" => id} = params) do
+    story = conn.assigns.current_story
+    content = params["content"]
+
+    if is_nil(content) || content == "" do
+      conn |> put_status(400) |> json(%{error: "content is required"})
+    else
+      piece =
+        Storybox.Stories.SequencePiece
+        |> Ash.Query.filter(id == ^id and story_id == ^story.id)
+        |> Ash.read!(authorize?: false)
+        |> List.first()
+
+      if piece do
+        case Storybox.Stories.SequencePiece
+             |> Ash.ActionInput.for_action(:create_version, %{
+               content: content,
+               sequence_piece_id: piece.id
+             })
+             |> Ash.run_action(authorize?: false) do
+          {:ok, version} ->
+            conn |> put_status(201) |> json(format_version(version))
+
+          {:error, _} ->
+            conn |> put_status(503) |> json(%{error: "storage error"})
+        end
+      else
+        conn |> put_status(404) |> json(%{error: "not found"})
+      end
+    end
+  end
+
+  def create_scene_version(conn, %{"id" => id} = params) do
+    story = conn.assigns.current_story
+    content = params["content"]
+
+    if is_nil(content) || content == "" do
+      conn |> put_status(400) |> json(%{error: "content is required"})
+    else
+      scene =
+        Storybox.Stories.ScenePiece
+        |> Ash.Query.filter(id == ^id)
+        |> Ash.read!(authorize?: false)
+        |> List.first()
+
+      owner =
+        if scene do
+          Storybox.Stories.SequencePiece
+          |> Ash.Query.filter(id == ^scene.sequence_piece_id and story_id == ^story.id)
+          |> Ash.read!(authorize?: false)
+          |> List.first()
+        end
+
+      if scene && owner do
+        case Storybox.Stories.ScenePiece
+             |> Ash.ActionInput.for_action(:create_version, %{
+               content: content,
+               scene_piece_id: scene.id
+             })
+             |> Ash.run_action(authorize?: false) do
+          {:ok, version} ->
+            conn |> put_status(201) |> json(format_version(version))
+
+          {:error, _} ->
+            conn |> put_status(503) |> json(%{error: "storage error"})
+        end
+      else
+        conn |> put_status(404) |> json(%{error: "not found"})
+      end
+    end
+  end
+
   defp format_character(char) do
     %{
       id: char.id,
