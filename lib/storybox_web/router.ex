@@ -28,7 +28,10 @@ defmodule StoryboxWeb.Router do
     auth_routes(Storybox.Accounts.User, to: AuthController)
     reset_route([])
 
-    get "/", PageController, :home
+    live_session :authenticated,
+      on_mount: AshAuthentication.Phoenix.LiveSession do
+      live "/", StoryListLive
+    end
   end
 
   scope "/api", StoryboxWeb do
