@@ -55,6 +55,9 @@ config :ex_aws, :s3,
 
 config :storybox, minio_bucket: "storybox-pieces"
 
+# AshAuthentication.Phoenix — use verified routes instead of router helpers
+config :ash_authentication_phoenix, :auth_routes_prefix, "/"
+
 # Ash formatter plugin
 config :ash, :formatter, extensions: [Ash.Formatter]
 
