@@ -35,4 +35,25 @@ defmodule StoryboxWeb.ConnCase do
     Storybox.DataCase.setup_sandbox(tags)
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
+
+  @doc """
+  Stores a user in the Plug session so that LiveView tests can mount
+  as an authenticated user via the AshAuthentication.Phoenix.LiveSession hook.
+  """
+  def log_in_user(conn, user) do
+    {:ok, token, _claims} = AshAuthentication.Jwt.token_for_user(user)
+
+    :ok =
+      AshAuthentication.TokenResource.Actions.store_token(
+        Storybox.Accounts.Token,
+        %{"token" => token, "purpose" => "user"},
+        context: %{private: %{ash_authentication?: true}}
+      )
+
+    user = %{user | __metadata__: Map.put(user.__metadata__, :token, token)}
+
+    conn
+    |> Plug.Test.init_test_session(%{})
+    |> AshAuthentication.Phoenix.Plug.store_in_session(user)
+  end
 end

@@ -1,8 +1,8 @@
 defmodule StoryboxWeb.PageControllerTest do
   use StoryboxWeb.ConnCase
 
-  test "GET /", %{conn: conn} do
+  test "GET / redirects unauthenticated users to sign-in", %{conn: conn} do
     conn = get(conn, ~p"/")
-    assert html_response(conn, 200) =~ "Peace of mind from prototype to production"
+    assert redirected_to(conn) == ~p"/sign-in"
   end
 end
