@@ -100,6 +100,201 @@ defmodule StoryboxWeb.ApiController do
     })
   end
 
+  def script_view(conn, params) do
+    story = conn.assigns.current_story
+
+    case parse_script_mode(params) do
+      {:error, reason} ->
+        conn |> put_status(400) |> json(%{error: reason})
+
+      {:ok, mode, snapshot_id} ->
+        sequences =
+          Storybox.Stories.SequencePiece
+          |> Ash.Query.filter(story_id == ^story.id)
+          |> Ash.Query.sort(position: :asc)
+          |> Ash.read!(authorize?: false)
+
+        sequence_ids = Enum.map(sequences, & &1.id)
+
+        scene_pieces =
+          Storybox.Stories.ScenePiece
+          |> Ash.Query.filter(sequence_piece_id in ^sequence_ids)
+          |> Ash.Query.sort(position: :asc)
+          |> Ash.read!(authorize?: false)
+
+        scenes_by_sequence = Enum.group_by(scene_pieces, & &1.sequence_piece_id)
+        scene_piece_ids = Enum.map(scene_pieces, & &1.id)
+
+        case resolve_script_versions(mode, snapshot_id, story.id, scene_pieces, scene_piece_ids) do
+          {:error, :snapshot_not_found} ->
+            conn |> put_status(404) |> json(%{error: "snapshot not found"})
+
+          {:ok, versions_map} ->
+            case build_script_scenes(scene_pieces, versions_map) do
+              {:error, :content_unavailable} ->
+                conn |> put_status(503) |> json(%{error: "content unavailable"})
+
+              {:ok, scenes_with_content} ->
+                result =
+                  sequences
+                  |> Enum.map(fn seq ->
+                    scenes =
+                      scenes_by_sequence
+                      |> Map.get(seq.id, [])
+                      |> Enum.map(&scenes_with_content[&1.id])
+
+                    %{
+                      id: seq.id,
+                      title: seq.title,
+                      act: seq.act,
+                      position: seq.position,
+                      scenes: scenes
+                    }
+                  end)
+
+                json(conn, %{
+                  story_id: story.id,
+                  mode: mode,
+                  snapshot_id: snapshot_id,
+                  sequences: result
+                })
+            end
+        end
+    end
+  end
+
+  defp parse_script_mode(%{"mode" => mode} = params)
+       when mode in ["latest", "approved", "snapshot"] do
+    if mode == "snapshot" do
+      case params do
+        %{"snapshot_id" => id} -> {:ok, mode, id}
+        _ -> {:error, "snapshot_id is required when mode is snapshot"}
+      end
+    else
+      {:ok, mode, nil}
+    end
+  end
+
+  defp parse_script_mode(%{"mode" => _}),
+    do: {:error, "mode must be latest, approved, or snapshot"}
+
+  defp parse_script_mode(_), do: {:error, "mode is required"}
+
+  defp resolve_script_versions("latest", _snapshot_id, _story_id, _scene_pieces, scene_piece_ids) do
+    all_versions =
+      Storybox.Stories.SceneVersion
+      |> Ash.Query.filter(scene_piece_id in ^scene_piece_ids)
+      |> Ash.read!(authorize?: false)
+
+    versions_map =
+      all_versions
+      |> Enum.group_by(& &1.scene_piece_id)
+      |> Map.new(fn {id, vs} -> {id, Enum.max_by(vs, & &1.version_number)} end)
+
+    {:ok, versions_map}
+  end
+
+  defp resolve_script_versions(
+         "approved",
+         _snapshot_id,
+         _story_id,
+         scene_pieces,
+         _scene_piece_ids
+       ) do
+    approved_ids =
+      scene_pieces
+      |> Enum.map(& &1.approved_version_id)
+      |> Enum.reject(&is_nil/1)
+
+    versions_by_id =
+      case approved_ids do
+        [] ->
+          %{}
+
+        ids ->
+          Storybox.Stories.SceneVersion
+          |> Ash.Query.filter(id in ^ids)
+          |> Ash.read!(authorize?: false)
+          |> Map.new(&{&1.id, &1})
+      end
+
+    versions_map =
+      Map.new(scene_pieces, fn piece ->
+        {piece.id, versions_by_id[piece.approved_version_id]}
+      end)
+
+    {:ok, versions_map}
+  end
+
+  defp resolve_script_versions("snapshot", snapshot_id, story_id, scene_pieces, _scene_piece_ids) do
+    result =
+      Storybox.Stories.ScriptSnapshot
+      |> Ash.Query.filter(id == ^snapshot_id and story_id == ^story_id)
+      |> Ash.read_one(authorize?: false)
+
+    case result do
+      {:ok, nil} ->
+        {:error, :snapshot_not_found}
+
+      {:ok, snapshot} ->
+        version_ids = Map.values(snapshot.entries)
+
+        versions_by_id =
+          case version_ids do
+            [] ->
+              %{}
+
+            ids ->
+              Storybox.Stories.SceneVersion
+              |> Ash.Query.filter(id in ^ids)
+              |> Ash.read!(authorize?: false)
+              |> Map.new(&{to_string(&1.id), &1})
+          end
+
+        versions_map =
+          Map.new(scene_pieces, fn piece ->
+            version_id = snapshot.entries[to_string(piece.id)]
+            {piece.id, versions_by_id[version_id]}
+          end)
+
+        {:ok, versions_map}
+
+      {:error, _} ->
+        {:error, :snapshot_not_found}
+    end
+  end
+
+  defp build_script_scenes(scene_pieces, versions_map) do
+    Enum.reduce_while(scene_pieces, {:ok, %{}}, fn piece, {:ok, acc} ->
+      version = versions_map[piece.id]
+
+      case fetch_scene_content(version) do
+        {:error, :content_unavailable} ->
+          {:halt, {:error, :content_unavailable}}
+
+        {:ok, content} ->
+          scene = %{
+            id: piece.id,
+            title: piece.title,
+            position: piece.position,
+            version: format_version(version),
+            content: content
+          }
+
+          {:cont, {:ok, Map.put(acc, piece.id, scene)}}
+      end
+    end)
+  end
+
+  defp fetch_scene_content(nil), do: {:ok, nil}
+
+  defp fetch_scene_content(version) do
+    case Storybox.Storage.get_content(version.content_uri) do
+      {:ok, content} -> {:ok, content}
+      {:error, _} -> {:error, :content_unavailable}
+    end
+  end
+
   def sequence_detail(conn, %{"id" => id}) do
     story = conn.assigns.current_story
 
