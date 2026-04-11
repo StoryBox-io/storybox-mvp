@@ -20,6 +20,13 @@ if System.get_env("PHX_SERVER") do
   config :storybox, StoryboxWeb.Endpoint, server: true
 end
 
+# Bind to all interfaces when running inside a container (PHX_HOST is set in podman-compose.yml).
+# This overrides the loopback-only default in dev.exs so port-forwarding works.
+if System.get_env("PHX_HOST") && config_env() == :dev do
+  config :storybox, StoryboxWeb.Endpoint,
+    http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")]
+end
+
 # MinIO / ExAws — always read from env if present (dev container + prod)
 if minio_endpoint = System.get_env("MINIO_ENDPOINT") do
   uri = URI.parse(minio_endpoint)
