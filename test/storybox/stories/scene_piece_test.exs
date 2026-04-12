@@ -1,6 +1,8 @@
 defmodule Storybox.Stories.ScenePieceTest do
   use Storybox.DataCase
 
+  require Ash.Query
+
   setup do
     {:ok, user} =
       Storybox.Accounts.User
@@ -149,6 +151,72 @@ defmodule Storybox.Stories.ScenePieceTest do
                |> Ash.update()
 
       assert updated_piece.approved_version_id == version.id
+    end
+  end
+
+  describe "set_weights action on SceneVersion" do
+    test "sets weights map on a version with empty weights and persists it", %{sequence: sequence} do
+      {:ok, piece} =
+        Storybox.Stories.ScenePiece
+        |> Ash.Changeset.for_create(:create, %{
+          title: "Test Scene",
+          position: 1,
+          sequence_piece_id: sequence.id
+        })
+        |> Ash.create()
+
+      {:ok, version} =
+        Storybox.Stories.SceneVersion
+        |> Ash.Changeset.for_create(:create, %{
+          scene_piece_id: piece.id,
+          content_uri: "storybox://test/scene/v1",
+          version_number: 1,
+          weights: %{}
+        })
+        |> Ash.create()
+
+      assert {:ok, updated} =
+               version
+               |> Ash.Changeset.for_update(:set_weights, %{weights: %{"preference" => 0.6}})
+               |> Ash.update()
+
+      assert updated.weights == %{"preference" => 0.6}
+
+      reloaded =
+        Storybox.Stories.SceneVersion
+        |> Ash.Query.filter(id == ^version.id)
+        |> Ash.read_one!(authorize?: false)
+
+      assert reloaded.weights == %{"preference" => 0.6}
+    end
+
+    test "replacing weights removes keys not in the new map", %{sequence: sequence} do
+      {:ok, piece} =
+        Storybox.Stories.ScenePiece
+        |> Ash.Changeset.for_create(:create, %{
+          title: "Test Scene 2",
+          position: 2,
+          sequence_piece_id: sequence.id
+        })
+        |> Ash.create()
+
+      {:ok, version} =
+        Storybox.Stories.SceneVersion
+        |> Ash.Changeset.for_create(:create, %{
+          scene_piece_id: piece.id,
+          content_uri: "storybox://test/scene/v2",
+          version_number: 1,
+          weights: %{"preference" => 0.9, "theme" => 0.7}
+        })
+        |> Ash.create()
+
+      assert {:ok, updated} =
+               version
+               |> Ash.Changeset.for_update(:set_weights, %{weights: %{"preference" => 0.4}})
+               |> Ash.update()
+
+      assert updated.weights == %{"preference" => 0.4}
+      refute Map.has_key?(updated.weights, "theme")
     end
   end
 

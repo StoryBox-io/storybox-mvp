@@ -61,6 +61,7 @@ defmodule StoryboxWeb.SceneCompareLive do
                      |> assign(:right_version, nil)
                      |> assign(:left_content, nil)
                      |> assign(:right_content, nil)
+                     |> assign(:weight_forms, MapSet.new())
                      |> assign(:page_title, "#{story.title} — #{scene.title} Compare")}
                 end
             end
@@ -124,6 +125,52 @@ defmodule StoryboxWeb.SceneCompareLive do
   end
 
   @impl true
+  def handle_event("toggle_weight_form", %{"version-id" => version_id}, socket) do
+    weight_forms =
+      if MapSet.member?(socket.assigns.weight_forms, version_id) do
+        MapSet.delete(socket.assigns.weight_forms, version_id)
+      else
+        MapSet.put(socket.assigns.weight_forms, version_id)
+      end
+
+    {:noreply, assign(socket, :weight_forms, weight_forms)}
+  end
+
+  @impl true
+  def handle_event("set_weights", %{"version_id" => version_id, "weights" => raw_weights}, socket) do
+    weights = parse_weights(raw_weights)
+
+    version =
+      Storybox.Stories.SceneVersion
+      |> Ash.Query.filter(id == ^version_id)
+      |> Ash.read_one!(authorize?: false)
+
+    version
+    |> Ash.Changeset.for_update(:set_weights, %{weights: weights})
+    |> Ash.update!(authorize?: false)
+
+    versions = load_versions(socket.assigns.scene)
+    weight_forms = MapSet.delete(socket.assigns.weight_forms, version_id)
+
+    left_version =
+      if socket.assigns.left_version,
+        do: find_version(versions, socket.assigns.left_version.version_number),
+        else: nil
+
+    right_version =
+      if socket.assigns.right_version,
+        do: find_version(versions, socket.assigns.right_version.version_number),
+        else: nil
+
+    {:noreply,
+     socket
+     |> assign(:versions, versions)
+     |> assign(:left_version, left_version)
+     |> assign(:right_version, right_version)
+     |> assign(:weight_forms, weight_forms)}
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_user={@current_user}>
@@ -173,45 +220,63 @@ defmodule StoryboxWeb.SceneCompareLive do
             </div>
 
             <%= if @left_version do %>
+              <% rs = review_status(@left_version.weights, @story.through_lines) %>
               <div class={[
-                "flex flex-wrap items-center gap-2 rounded p-2 text-sm",
-                if(@left_version.id == @scene.approved_version_id, do: "bg-base-200", else: "")
+                "rounded p-2 text-sm",
+                if(@left_version.id == @scene.approved_version_id, do: "bg-base-200", else: ""),
+                if(rs == :unreviewed, do: "ring-2 ring-warning", else: "")
               ]}>
-                <span class="font-mono font-semibold">v{@left_version.version_number}</span>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-mono font-semibold">v{@left_version.version_number}</span>
 
-                <%= if @left_version.id == @scene.approved_version_id do %>
-                  <span class="badge badge-success badge-sm">Approved</span>
-                <% end %>
+                  <%= if @left_version.id == @scene.approved_version_id do %>
+                    <span class="badge badge-success badge-sm">Approved</span>
+                  <% end %>
 
-                <span class={[
-                  "badge badge-sm",
-                  if(@left_version.upstream_status == :stale,
-                    do: "badge-warning",
-                    else: "badge-ghost"
-                  )
-                ]}>
-                  {@left_version.upstream_status}
-                </span>
+                  <span class={[
+                    "badge badge-sm",
+                    if(@left_version.upstream_status == :stale,
+                      do: "badge-warning",
+                      else: "badge-ghost"
+                    )
+                  ]}>
+                    {@left_version.upstream_status}
+                  </span>
 
-                <span class={[
-                  "badge badge-sm",
-                  case review_status(@left_version.weights, @story.through_lines) do
-                    :reviewed -> "badge-info"
-                    :partial -> "badge-warning"
-                    :unreviewed -> "badge-ghost"
-                  end
-                ]}>
-                  {review_status(@left_version.weights, @story.through_lines)}
-                </span>
+                  <span class={[
+                    "badge badge-sm",
+                    case rs do
+                      :reviewed -> "badge-info"
+                      :partial -> "badge-warning"
+                      :unreviewed -> "badge-ghost"
+                    end
+                  ]}>
+                    {rs}
+                  </span>
 
-                <%= if @left_version.id != @scene.approved_version_id do %>
-                  <button
-                    class="btn btn-xs btn-outline ml-auto"
-                    phx-click="approve_version"
-                    phx-value-version-id={@left_version.id}
-                  >
-                    Approve
-                  </button>
+                  <div class="ml-auto flex items-center gap-2">
+                    <button
+                      class="btn btn-xs btn-ghost"
+                      phx-click="toggle_weight_form"
+                      phx-value-version-id={@left_version.id}
+                    >
+                      Review
+                    </button>
+
+                    <%= if @left_version.id != @scene.approved_version_id do %>
+                      <button
+                        class="btn btn-xs btn-outline"
+                        phx-click="approve_version"
+                        phx-value-version-id={@left_version.id}
+                      >
+                        Approve
+                      </button>
+                    <% end %>
+                  </div>
+                </div>
+
+                <%= if MapSet.member?(@weight_forms, @left_version.id) do %>
+                  <.weight_form version={@left_version} through_lines={@story.through_lines} />
                 <% end %>
               </div>
 
@@ -252,45 +317,63 @@ defmodule StoryboxWeb.SceneCompareLive do
             </div>
 
             <%= if @right_version do %>
+              <% rs = review_status(@right_version.weights, @story.through_lines) %>
               <div class={[
-                "flex flex-wrap items-center gap-2 rounded p-2 text-sm",
-                if(@right_version.id == @scene.approved_version_id, do: "bg-base-200", else: "")
+                "rounded p-2 text-sm",
+                if(@right_version.id == @scene.approved_version_id, do: "bg-base-200", else: ""),
+                if(rs == :unreviewed, do: "ring-2 ring-warning", else: "")
               ]}>
-                <span class="font-mono font-semibold">v{@right_version.version_number}</span>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-mono font-semibold">v{@right_version.version_number}</span>
 
-                <%= if @right_version.id == @scene.approved_version_id do %>
-                  <span class="badge badge-success badge-sm">Approved</span>
-                <% end %>
+                  <%= if @right_version.id == @scene.approved_version_id do %>
+                    <span class="badge badge-success badge-sm">Approved</span>
+                  <% end %>
 
-                <span class={[
-                  "badge badge-sm",
-                  if(@right_version.upstream_status == :stale,
-                    do: "badge-warning",
-                    else: "badge-ghost"
-                  )
-                ]}>
-                  {@right_version.upstream_status}
-                </span>
+                  <span class={[
+                    "badge badge-sm",
+                    if(@right_version.upstream_status == :stale,
+                      do: "badge-warning",
+                      else: "badge-ghost"
+                    )
+                  ]}>
+                    {@right_version.upstream_status}
+                  </span>
 
-                <span class={[
-                  "badge badge-sm",
-                  case review_status(@right_version.weights, @story.through_lines) do
-                    :reviewed -> "badge-info"
-                    :partial -> "badge-warning"
-                    :unreviewed -> "badge-ghost"
-                  end
-                ]}>
-                  {review_status(@right_version.weights, @story.through_lines)}
-                </span>
+                  <span class={[
+                    "badge badge-sm",
+                    case rs do
+                      :reviewed -> "badge-info"
+                      :partial -> "badge-warning"
+                      :unreviewed -> "badge-ghost"
+                    end
+                  ]}>
+                    {rs}
+                  </span>
 
-                <%= if @right_version.id != @scene.approved_version_id do %>
-                  <button
-                    class="btn btn-xs btn-outline ml-auto"
-                    phx-click="approve_version"
-                    phx-value-version-id={@right_version.id}
-                  >
-                    Approve
-                  </button>
+                  <div class="ml-auto flex items-center gap-2">
+                    <button
+                      class="btn btn-xs btn-ghost"
+                      phx-click="toggle_weight_form"
+                      phx-value-version-id={@right_version.id}
+                    >
+                      Review
+                    </button>
+
+                    <%= if @right_version.id != @scene.approved_version_id do %>
+                      <button
+                        class="btn btn-xs btn-outline"
+                        phx-click="approve_version"
+                        phx-value-version-id={@right_version.id}
+                      >
+                        Approve
+                      </button>
+                    <% end %>
+                  </div>
+                </div>
+
+                <%= if MapSet.member?(@weight_forms, @right_version.id) do %>
+                  <.weight_form version={@right_version} through_lines={@story.through_lines} />
                 <% end %>
               </div>
 
@@ -306,6 +389,41 @@ defmodule StoryboxWeb.SceneCompareLive do
         </div>
       </div>
     </Layouts.app>
+    """
+  end
+
+  defp weight_form(assigns) do
+    ~H"""
+    <form phx-submit="set_weights" class="mt-3 space-y-2 border-t border-base-300 pt-3">
+      <input type="hidden" name="version_id" value={@version.id} />
+      <%= for tl <- @through_lines do %>
+        <% current = Map.get(@version.weights, tl, 0.0) %>
+        <div class="flex items-center gap-3">
+          <label class="text-xs text-base-content/70 w-24 shrink-0">{tl}</label>
+          <input
+            type="range"
+            name={"weights[#{tl}]"}
+            min="0"
+            max="1"
+            step="0.05"
+            value={current}
+            class="range range-xs flex-1"
+          />
+          <span class="text-xs font-mono w-8 text-right">{format_weight(current)}</span>
+        </div>
+      <% end %>
+      <div class="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          class="btn btn-xs btn-ghost"
+          phx-click="toggle_weight_form"
+          phx-value-version-id={@version.id}
+        >
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-xs btn-primary">Save</button>
+      </div>
+    </form>
     """
   end
 
@@ -360,4 +478,17 @@ defmodule StoryboxWeb.SceneCompareLive do
       true -> :unreviewed
     end
   end
+
+  defp parse_weights(raw) do
+    Map.new(raw, fn {k, v} ->
+      case Float.parse(v) do
+        {f, _} -> {k, f}
+        :error -> {k, 0.0}
+      end
+    end)
+  end
+
+  defp format_weight(v) when is_float(v), do: :erlang.float_to_binary(v, decimals: 2)
+  defp format_weight(v) when is_integer(v), do: :erlang.float_to_binary(v * 1.0, decimals: 2)
+  defp format_weight(_), do: "—"
 end
