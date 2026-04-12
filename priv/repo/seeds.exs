@@ -53,10 +53,102 @@ stories = [
   }
 ]
 
-for attrs <- stories, attrs.title not in existing_titles do
-  Storybox.Stories.Story
-  |> Ash.Changeset.for_create(:create, Map.put(attrs, :user_id, dev_user.id))
-  |> Ash.create!(authorize?: false)
+all_stories =
+  for attrs <- stories do
+    story =
+      if attrs.title not in existing_titles do
+        s =
+          Storybox.Stories.Story
+          |> Ash.Changeset.for_create(:create, Map.put(attrs, :user_id, dev_user.id))
+          |> Ash.create!(authorize?: false)
 
-  IO.puts("  Created story: #{attrs.title}")
+        IO.puts("  Created story: #{attrs.title}")
+        s
+      else
+        Storybox.Stories.Story
+        |> Ash.Query.filter(user_id == ^dev_user.id and title == ^attrs.title)
+        |> Ash.read_one!(authorize?: false)
+      end
+
+    {attrs.title, story}
+  end
+  |> Map.new()
+
+# Sub-entities for "The Long Road Home"
+if long_road = all_stories["The Long Road Home"] do
+  existing_characters =
+    Storybox.Stories.Character
+    |> Ash.Query.filter(story_id == ^long_road.id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(& &1.name)
+
+  existing_synopsis_count =
+    Storybox.Stories.SynopsisVersion
+    |> Ash.Query.filter(story_id == ^long_road.id)
+    |> Ash.read!(authorize?: false)
+    |> length()
+
+  existing_world =
+    Storybox.Stories.World
+    |> Ash.Query.filter(story_id == ^long_road.id)
+    |> Ash.read_one!(authorize?: false)
+
+  # Characters
+  for {name, attrs} <- [
+        {"Frank Malone",
+         %{
+           essence: "A man who lost himself in the war and must rediscover what he fought for.",
+           voice: "Sparse. Every word costs him something.",
+           contradictions: ["gentle yet scarred", "loyal yet absent"]
+         }},
+        {"Ruth Malone",
+         %{
+           essence:
+             "The woman who kept the family alive while waiting for a man who may never come back.",
+           voice: "Warm but guarded. She learned not to hope too loudly.",
+           contradictions: ["patient yet resentful", "steadfast yet changed"]
+         }}
+      ],
+      name not in existing_characters do
+    Storybox.Stories.Character
+    |> Ash.Changeset.for_create(:create, Map.merge(attrs, %{name: name, story_id: long_road.id}))
+    |> Ash.create!(authorize?: false)
+
+    IO.puts("  Created character: #{name}")
+  end
+
+  # World
+  if is_nil(existing_world) do
+    Storybox.Stories.World
+    |> Ash.Changeset.for_create(:create, %{
+      history:
+        "A mid-century American mill town that peaked before the war and never recovered. The men who left came back different; the town did too.",
+      rules:
+        "Grief is private. You work, you endure, you don't complain. Showing weakness is more shameful than suffering.",
+      subtext: "The real battle is always at home. The enemy is silence.",
+      story_id: long_road.id
+    })
+    |> Ash.create!(authorize?: false)
+
+    IO.puts("  Created world for The Long Road Home")
+  end
+
+  # Synopsis versions (only seed if none exist yet)
+  if existing_synopsis_count == 0 do
+    Ash.ActionInput.for_action(Storybox.Stories.SynopsisVersion, :create_version, %{
+      story_id: long_road.id,
+      content:
+        "Frank Malone returns to Millhaven after three years in Korea. The town is quieter than he remembered. His wife Ruth has kept the hardware store open alone. Their son Danny doesn't recognise him. Frank can't sleep — he keeps seeing faces. Over the course of one summer, Frank tries to reclaim his place in a life that moved on without him."
+    })
+    |> Ash.run_action!(authorize?: false)
+
+    Ash.ActionInput.for_action(Storybox.Stories.SynopsisVersion, :create_version, %{
+      story_id: long_road.id,
+      content:
+        "Frank Malone comes home from Korea to a Millhaven that has already grieved him and moved on. His wife Ruth runs the store. His son Danny is a stranger. Frank carries something back with him — something that has no name in 1953. Over one summer he dismantles and rebuilds himself, piece by piece, learning that redemption is not a return but an arrival somewhere new."
+    })
+    |> Ash.run_action!(authorize?: false)
+
+    IO.puts("  Created 2 synopsis versions for The Long Road Home")
+  end
 end
