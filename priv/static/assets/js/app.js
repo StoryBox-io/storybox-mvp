@@ -1,17 +1,18 @@
-// For Phoenix.HTML support, including form and button helpers
-// copy the following scripts into your javascript bundle:
-// * deps/phoenix_html/priv/static/phoenix_html.js
+// Phoenix HTML — form/button helpers
+// Phoenix — channels
+// Phoenix LiveView — real-time UI
 
-// For Phoenix.Channels support, copy the following scripts
-// into your javascript bundle:
-// * deps/phoenix/priv/static/phoenix.js
+// Initialise LiveSocket so phx-click, phx-submit, phx-change etc. work.
+let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
+let liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, {
+  longPollFallbackMs: 2500,
+  params: { _csrf_token: csrfToken }
+});
 
-// For Phoenix.LiveView support, copy the following scripts
-// into your javascript bundle:
-// * deps/phoenix_live_view/priv/static/phoenix_live_view.js
+liveSocket.connect();
+window.liveSocket = liveSocket;
 
 // Handle flash close
-// (you can safely remove this if you don't use the default flash component)
 document.querySelectorAll("[role=alert][data-flash]").forEach((el) => {
   el.addEventListener("click", () => {
     el.setAttribute("hidden", "");

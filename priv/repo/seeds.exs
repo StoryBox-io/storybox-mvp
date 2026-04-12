@@ -152,22 +152,36 @@ if long_road = all_stories["The Long Road Home"] do
       })
       |> Ash.create(authorize?: false)
 
+    return_v1_uri = Storybox.Storage.uri_for_sequence(long_road.id, piece_return.id, 1)
+
+    Storybox.Storage.put_content(
+      return_v1_uri,
+      "Frank steps off the bus onto the main street of Millhaven. The town looks the same but feels foreign. He stands on the sidewalk with his duffel bag, watching strangers pass. Nobody recognises him yet."
+    )
+
     {:ok, return_v1} =
       Storybox.Stories.SequenceVersion
       |> Ash.Changeset.for_create(:create, %{
         sequence_piece_id: piece_return.id,
-        content_uri: "storybox://stories/#{long_road.id}/sequences/#{piece_return.id}/v1",
+        content_uri: return_v1_uri,
         version_number: 1,
         upstream_status: :current,
         weights: %{"preference" => 0.8, "theme" => 0.6}
       })
       |> Ash.create(authorize?: false)
 
+    return_v2_uri = Storybox.Storage.uri_for_sequence(long_road.id, piece_return.id, 2)
+
+    Storybox.Storage.put_content(
+      return_v2_uri,
+      "Frank arrives in Millhaven. Revised to open on Ruth watching from the hardware store window before Frank sees her — establishes her perspective first. The town's indifference to his return is the point."
+    )
+
     {:ok, _return_v2} =
       Storybox.Stories.SequenceVersion
       |> Ash.Changeset.for_create(:create, %{
         sequence_piece_id: piece_return.id,
-        content_uri: "storybox://stories/#{long_road.id}/sequences/#{piece_return.id}/v2",
+        content_uri: return_v2_uri,
         version_number: 2,
         upstream_status: :stale,
         weights: %{}
@@ -190,11 +204,18 @@ if long_road = all_stories["The Long Road Home"] do
       })
       |> Ash.create(authorize?: false)
 
+    old_faces_v1_uri = Storybox.Storage.uri_for_sequence(long_road.id, piece_old_faces.id, 1)
+
+    Storybox.Storage.put_content(
+      old_faces_v1_uri,
+      "Frank walks into Sullivan's bar. Hank Sullivan is behind the counter — they served together. The reunion is warm but guarded. Frank asks about people he knew. Some have moved on, some didn't come back."
+    )
+
     {:ok, old_faces_v1} =
       Storybox.Stories.SequenceVersion
       |> Ash.Changeset.for_create(:create, %{
         sequence_piece_id: piece_old_faces.id,
-        content_uri: "storybox://stories/#{long_road.id}/sequences/#{piece_old_faces.id}/v1",
+        content_uri: old_faces_v1_uri,
         version_number: 1,
         upstream_status: :current,
         weights: %{"preference" => 0.5}
@@ -229,6 +250,141 @@ if long_road = all_stories["The Long Road Home"] do
       |> Ash.create(authorize?: false)
 
     IO.puts("  Created 4 sequence pieces for The Long Road Home")
+  end
+
+  # Scene pieces for "The Return" (only seed if none exist for that sequence)
+  the_return =
+    Storybox.Stories.SequencePiece
+    |> Ash.Query.filter(story_id == ^long_road.id and title == "The Return")
+    |> Ash.read_one!(authorize?: false)
+
+  if the_return do
+    existing_scene_count =
+      Storybox.Stories.ScenePiece
+      |> Ash.Query.filter(sequence_piece_id == ^the_return.id)
+      |> Ash.read!(authorize?: false)
+      |> length()
+
+    if existing_scene_count == 0 do
+      # Scene 1 — Homecoming (approved v1, stale v2)
+      {:ok, scene_homecoming} =
+        Storybox.Stories.ScenePiece
+        |> Ash.Changeset.for_create(:create, %{
+          title: "Homecoming",
+          position: 1,
+          sequence_piece_id: the_return.id
+        })
+        |> Ash.create(authorize?: false)
+
+      homecoming_v1_uri =
+        Storybox.Storage.uri_for_scene(long_road.id, scene_homecoming.id, 1)
+
+      Storybox.Storage.put_content(homecoming_v1_uri, """
+      INT. MILLHAVEN BUS DEPOT - DAY
+
+      The bus pulls in. Steam. A handful of passengers step off.
+
+      FRANK MALONE (34, lean, careful eyes) steps onto the platform. He sets down his duffel bag and looks at the street.
+
+      It's the same street. Something is different. Him, maybe.
+
+      He picks up the bag and walks.
+      """)
+
+      {:ok, homecoming_v1} =
+        Storybox.Stories.SceneVersion
+        |> Ash.Changeset.for_create(:create, %{
+          scene_piece_id: scene_homecoming.id,
+          content_uri: homecoming_v1_uri,
+          version_number: 1,
+          upstream_status: :current,
+          weights: %{"preference" => 0.9, "theme" => 0.7}
+        })
+        |> Ash.create(authorize?: false)
+
+      homecoming_v2_uri =
+        Storybox.Storage.uri_for_scene(long_road.id, scene_homecoming.id, 2)
+
+      Storybox.Storage.put_content(homecoming_v2_uri, """
+      EXT. MILLHAVEN MAIN STREET - DAY
+
+      RUTH MALONE (32) stands in the window of the hardware store. She watches the street.
+
+      A bus pulls up at the far end. Passengers step off. One of them stops and just stands there.
+
+      Ruth leans closer to the glass.
+
+      INT. HARDWARE STORE - CONTINUOUS
+
+      She moves to the door. Opens it. Steps outside.
+
+      The man is still standing there. He hasn't seen her yet.
+      """)
+
+      {:ok, _homecoming_v2} =
+        Storybox.Stories.SceneVersion
+        |> Ash.Changeset.for_create(:create, %{
+          scene_piece_id: scene_homecoming.id,
+          content_uri: homecoming_v2_uri,
+          version_number: 2,
+          upstream_status: :stale,
+          weights: %{}
+        })
+        |> Ash.create(authorize?: false)
+
+      # Approve v1
+      scene_homecoming
+      |> Ash.Changeset.for_update(:approve_version, %{version_id: homecoming_v1.id})
+      |> Ash.update!(authorize?: false)
+
+      # Scene 2 — The Platform (no approved version)
+      {:ok, scene_platform} =
+        Storybox.Stories.ScenePiece
+        |> Ash.Changeset.for_create(:create, %{
+          title: "The Platform",
+          position: 2,
+          sequence_piece_id: the_return.id
+        })
+        |> Ash.create(authorize?: false)
+
+      platform_v1_uri =
+        Storybox.Storage.uri_for_scene(long_road.id, scene_platform.id, 1)
+
+      Storybox.Storage.put_content(platform_v1_uri, """
+      EXT. MILLHAVEN BUS DEPOT - DAY
+
+      Frank walks to the far end of the platform. He stops at a payphone. Picks up the receiver.
+
+      Holds it.
+
+      Puts it back.
+
+      He wasn't ready to call yet. He picks up his bag and walks into town.
+      """)
+
+      {:ok, _platform_v1} =
+        Storybox.Stories.SceneVersion
+        |> Ash.Changeset.for_create(:create, %{
+          scene_piece_id: scene_platform.id,
+          content_uri: platform_v1_uri,
+          version_number: 1,
+          upstream_status: :current,
+          weights: %{"preference" => 0.5}
+        })
+        |> Ash.create(authorize?: false)
+
+      # Scene 3 — First Night (no versions)
+      {:ok, _scene_first_night} =
+        Storybox.Stories.ScenePiece
+        |> Ash.Changeset.for_create(:create, %{
+          title: "First Night",
+          position: 3,
+          sequence_piece_id: the_return.id
+        })
+        |> Ash.create(authorize?: false)
+
+      IO.puts("  Created 3 scene pieces for The Return")
+    end
   end
 
   # Synopsis versions (only seed if none exist yet)
