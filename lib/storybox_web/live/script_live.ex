@@ -130,6 +130,14 @@ defmodule StoryboxWeb.ScriptLive do
                   <div class="flex items-center gap-2">
                     <span class="badge badge-outline badge-sm font-mono">#{piece.position}</span>
                     <h3 class="font-semibold">{piece.title}</h3>
+                    <%= if length(versions) > 1 do %>
+                      <.link
+                        navigate={~p"/stories/#{@story.id}/scenes/#{piece.id}/compare"}
+                        class="ml-auto text-sm text-base-content/60 hover:text-base-content"
+                      >
+                        Compare →
+                      </.link>
+                    <% end %>
                   </div>
 
                   <%= if visible == [] do %>

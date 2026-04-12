@@ -34,6 +34,7 @@ defmodule StoryboxWeb.Router do
       live "/stories/:story_id", StoryOverviewLive
       live "/stories/:story_id/treatment", TreatmentLive
       live "/stories/:story_id/sequences/:sequence_id/script", ScriptLive
+      live "/stories/:story_id/scenes/:scene_id/compare", SceneCompareLive
     end
   end
 
