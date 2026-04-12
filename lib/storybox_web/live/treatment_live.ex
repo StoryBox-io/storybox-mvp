@@ -30,9 +30,45 @@ defmodule StoryboxWeb.TreatmentLive do
              |> assign(:story, story)
              |> assign(:acts, acts)
              |> assign(:content, fetch_primary_content(acts))
+             |> assign(:weight_forms, MapSet.new())
              |> assign(:page_title, "#{story.title} — Treatment")}
         end
     end
+  end
+
+  @impl true
+  def handle_event("toggle_weight_form", %{"version-id" => version_id}, socket) do
+    weight_forms =
+      if MapSet.member?(socket.assigns.weight_forms, version_id) do
+        MapSet.delete(socket.assigns.weight_forms, version_id)
+      else
+        MapSet.put(socket.assigns.weight_forms, version_id)
+      end
+
+    {:noreply, assign(socket, :weight_forms, weight_forms)}
+  end
+
+  @impl true
+  def handle_event("set_weights", %{"version_id" => version_id, "weights" => raw_weights}, socket) do
+    weights = parse_weights(raw_weights)
+
+    version =
+      Storybox.Stories.SequenceVersion
+      |> Ash.Query.filter(id == ^version_id)
+      |> Ash.read_one!(authorize?: false)
+
+    version
+    |> Ash.Changeset.for_update(:set_weights, %{weights: weights})
+    |> Ash.update!(authorize?: false)
+
+    acts = load_acts(socket.assigns.story)
+    weight_forms = MapSet.delete(socket.assigns.weight_forms, version_id)
+
+    {:noreply,
+     socket
+     |> assign(:acts, acts)
+     |> assign(:content, fetch_primary_content(acts))
+     |> assign(:weight_forms, weight_forms)}
   end
 
   @impl true
@@ -106,46 +142,70 @@ defmodule StoryboxWeb.TreatmentLive do
                       <% else %>
                         <div class="space-y-2">
                           <%= for version <- versions do %>
+                            <% rs = review_status(version.weights, @story.through_lines) %>
                             <div class={[
-                              "flex flex-wrap items-center gap-2 rounded p-2 text-sm",
-                              if(version.id == piece.approved_version_id, do: "bg-base-300", else: "")
+                              "rounded p-2 text-sm",
+                              if(version.id == piece.approved_version_id,
+                                do: "bg-base-300",
+                                else: ""
+                              ),
+                              if(rs == :unreviewed, do: "ring-2 ring-warning", else: "")
                             ]}>
-                              <span class="font-mono font-semibold">v{version.version_number}</span>
+                              <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-mono font-semibold">v{version.version_number}</span>
 
-                              <%= if version.id == piece.approved_version_id do %>
-                                <span class="badge badge-success badge-sm">Approved</span>
-                              <% end %>
+                                <%= if version.id == piece.approved_version_id do %>
+                                  <span class="badge badge-success badge-sm">Approved</span>
+                                <% end %>
 
-                              <span class={[
-                                "badge badge-sm",
-                                if(version.upstream_status == :stale,
-                                  do: "badge-warning",
-                                  else: "badge-ghost"
-                                )
-                              ]}>
-                                {version.upstream_status}
-                              </span>
+                                <span class={[
+                                  "badge badge-sm",
+                                  if(version.upstream_status == :stale,
+                                    do: "badge-warning",
+                                    else: "badge-ghost"
+                                  )
+                                ]}>
+                                  {version.upstream_status}
+                                </span>
 
-                              <span class={[
-                                "badge badge-sm",
-                                case review_status(version.weights, @story.through_lines) do
-                                  :reviewed -> "badge-info"
-                                  :partial -> "badge-warning"
-                                  :unreviewed -> "badge-ghost"
-                                end
-                              ]}>
-                                {review_status(version.weights, @story.through_lines)}
-                              </span>
+                                <span class={[
+                                  "badge badge-sm",
+                                  case rs do
+                                    :reviewed -> "badge-info"
+                                    :partial -> "badge-warning"
+                                    :unreviewed -> "badge-ghost"
+                                  end
+                                ]}>
+                                  {rs}
+                                </span>
 
-                              <%= if version.id != piece.approved_version_id do %>
-                                <button
-                                  class="btn btn-xs btn-outline ml-auto"
-                                  phx-click="approve_version"
-                                  phx-value-piece-id={piece.id}
-                                  phx-value-version-id={version.id}
-                                >
-                                  Approve
-                                </button>
+                                <div class="ml-auto flex items-center gap-2">
+                                  <button
+                                    class="btn btn-xs btn-ghost"
+                                    phx-click="toggle_weight_form"
+                                    phx-value-version-id={version.id}
+                                  >
+                                    Review
+                                  </button>
+
+                                  <%= if version.id != piece.approved_version_id do %>
+                                    <button
+                                      class="btn btn-xs btn-outline"
+                                      phx-click="approve_version"
+                                      phx-value-piece-id={piece.id}
+                                      phx-value-version-id={version.id}
+                                    >
+                                      Approve
+                                    </button>
+                                  <% end %>
+                                </div>
+                              </div>
+
+                              <%= if MapSet.member?(@weight_forms, version.id) do %>
+                                <.weight_form
+                                  version={version}
+                                  through_lines={@story.through_lines}
+                                />
                               <% end %>
                             </div>
                           <% end %>
@@ -160,6 +220,41 @@ defmodule StoryboxWeb.TreatmentLive do
         <% end %>
       </div>
     </Layouts.app>
+    """
+  end
+
+  defp weight_form(assigns) do
+    ~H"""
+    <form phx-submit="set_weights" class="mt-3 space-y-2 border-t border-base-300 pt-3">
+      <input type="hidden" name="version_id" value={@version.id} />
+      <%= for tl <- @through_lines do %>
+        <% current = Map.get(@version.weights, tl, 0.0) %>
+        <div class="flex items-center gap-3">
+          <label class="text-xs text-base-content/70 w-24 shrink-0">{tl}</label>
+          <input
+            type="range"
+            name={"weights[#{tl}]"}
+            min="0"
+            max="1"
+            step="0.05"
+            value={current}
+            class="range range-xs flex-1"
+          />
+          <span class="text-xs font-mono w-8 text-right">{format_weight(current)}</span>
+        </div>
+      <% end %>
+      <div class="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          class="btn btn-xs btn-ghost"
+          phx-click="toggle_weight_form"
+          phx-value-version-id={@version.id}
+        >
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-xs btn-primary">Save</button>
+      </div>
+    </form>
     """
   end
 
@@ -231,4 +326,17 @@ defmodule StoryboxWeb.TreatmentLive do
       true -> :unreviewed
     end
   end
+
+  defp parse_weights(raw) do
+    Map.new(raw, fn {k, v} ->
+      case Float.parse(v) do
+        {f, _} -> {k, f}
+        :error -> {k, 0.0}
+      end
+    end)
+  end
+
+  defp format_weight(v) when is_float(v), do: :erlang.float_to_binary(v, decimals: 2)
+  defp format_weight(v) when is_integer(v), do: :erlang.float_to_binary(v * 1.0, decimals: 2)
+  defp format_weight(_), do: "—"
 end

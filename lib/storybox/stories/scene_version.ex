@@ -38,5 +38,9 @@ defmodule Storybox.Stories.SceneVersion do
     update :mark_stale do
       change set_attribute(:upstream_status, :stale)
     end
+
+    update :set_weights do
+      accept [:weights]
+    end
   end
 end

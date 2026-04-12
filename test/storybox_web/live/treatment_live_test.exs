@@ -392,6 +392,91 @@ defmodule StoryboxWeb.TreatmentLiveTest do
     end
   end
 
+  describe "weight form" do
+    test "unreviewed version row has the ring-warning indicator", %{
+      conn: conn,
+      alice: alice,
+      story: story
+    } do
+      conn = log_in_user(conn, alice)
+      {:ok, _view, html} = live(conn, "/stories/#{story.id}/treatment")
+
+      # reveal_v2 has empty weights — should render ring-2 ring-warning
+      assert html =~ "ring-warning"
+    end
+
+    test "Review button is present for each version", %{
+      conn: conn,
+      alice: alice,
+      story: story
+    } do
+      conn = log_in_user(conn, alice)
+      {:ok, _view, html} = live(conn, "/stories/#{story.id}/treatment")
+
+      assert html =~ "Review"
+    end
+
+    test "clicking Review on The Reveal v2 opens a form with a range input per through_line", %{
+      conn: conn,
+      alice: alice,
+      story: story,
+      reveal_v2: reveal_v2
+    } do
+      conn = log_in_user(conn, alice)
+      {:ok, view, _html} = live(conn, "/stories/#{story.id}/treatment")
+
+      html =
+        view
+        |> element(
+          "[phx-click=\"toggle_weight_form\"][phx-value-version-id=\"#{reveal_v2.id}\"]",
+          "Review"
+        )
+        |> render_click()
+
+      # Story has through_lines ["preference", "theme"] — expect both inputs
+      assert html =~ ~s(name="weights[preference]")
+      assert html =~ ~s(name="weights[theme]")
+    end
+
+    test "submitting the weight form persists weights and shows the reviewed badge", %{
+      conn: conn,
+      alice: alice,
+      story: story,
+      reveal_v2: reveal_v2
+    } do
+      conn = log_in_user(conn, alice)
+      {:ok, view, _html} = live(conn, "/stories/#{story.id}/treatment")
+
+      # Open the form
+      view
+      |> element(
+        "[phx-click=\"toggle_weight_form\"][phx-value-version-id=\"#{reveal_v2.id}\"]",
+        "Review"
+      )
+      |> render_click()
+
+      # Submit weights for both through_lines
+      view
+      |> form("form[phx-submit=\"set_weights\"]",
+        version_id: reveal_v2.id,
+        weights: %{"preference" => "0.8", "theme" => "0.6"}
+      )
+      |> render_submit()
+
+      # Weights persisted in DB
+      updated =
+        Storybox.Stories.SequenceVersion
+        |> Ash.Query.filter(id == ^reveal_v2.id)
+        |> Ash.read_one!(authorize?: false)
+
+      assert updated.weights == %{"preference" => 0.8, "theme" => 0.6}
+
+      # reviewed badge visible
+      html = render(view)
+      assert html =~ "reviewed"
+    end
+  end
+
   describe "empty story" do
     test "shows no-sequences empty state for a story with no sequences", %{
       conn: conn,
