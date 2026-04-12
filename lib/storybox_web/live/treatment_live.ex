@@ -23,10 +23,13 @@ defmodule StoryboxWeb.TreatmentLive do
              |> redirect(to: ~p"/")}
 
           story ->
+            acts = load_acts(story)
+
             {:ok,
              socket
              |> assign(:story, story)
-             |> assign(:acts, load_acts(story))
+             |> assign(:acts, acts)
+             |> assign(:content, fetch_primary_content(acts))
              |> assign(:page_title, "#{story.title} — Treatment")}
         end
     end
@@ -47,7 +50,8 @@ defmodule StoryboxWeb.TreatmentLive do
     |> Ash.Changeset.for_update(:approve_version, %{version_id: version_id})
     |> Ash.update!(authorize?: false)
 
-    {:noreply, assign(socket, :acts, load_acts(socket.assigns.story))}
+    acts = load_acts(socket.assigns.story)
+    {:noreply, socket |> assign(:acts, acts) |> assign(:content, fetch_primary_content(acts))}
   end
 
   @impl true
@@ -82,7 +86,20 @@ defmodule StoryboxWeb.TreatmentLive do
                       <div class="flex items-center gap-2">
                         <span class="badge badge-outline badge-sm font-mono">#{piece.position}</span>
                         <h3 class="font-semibold">{piece.title}</h3>
+                        <.link
+                          navigate={~p"/stories/#{@story.id}/sequences/#{piece.id}/script"}
+                          class="ml-auto text-sm text-base-content/60 hover:text-base-content"
+                        >
+                          Script →
+                        </.link>
                       </div>
+
+                      <% primary = primary_version(piece, versions) %>
+                      <%= if primary && Map.get(@content, primary.id) do %>
+                        <p class="text-sm text-base-content/80 whitespace-pre-wrap">
+                          {Map.get(@content, primary.id)}
+                        </p>
+                      <% end %>
 
                       <%= if versions == [] do %>
                         <p class="text-base-content/50 text-sm">No versions yet.</p>
@@ -177,6 +194,34 @@ defmodule StoryboxWeb.TreatmentLive do
          {piece, Map.get(versions_by_piece, piece.id, [])}
        end)}
     end)
+  end
+
+  # Returns the approved version if set, otherwise the latest.
+  defp primary_version(piece, versions) do
+    case Enum.find(versions, &(&1.id == piece.approved_version_id)) do
+      nil -> List.first(versions)
+      approved -> approved
+    end
+  end
+
+  defp fetch_primary_content(acts) do
+    acts
+    |> Enum.flat_map(fn {_act, pieces_with_versions} ->
+      Enum.map(pieces_with_versions, fn {piece, versions} ->
+        primary_version(piece, versions)
+      end)
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(fn version ->
+      content =
+        case Storybox.Storage.get_content(version.content_uri) do
+          {:ok, text} -> text
+          _ -> nil
+        end
+
+      {version.id, content}
+    end)
+    |> Map.new()
   end
 
   defp review_status(weights, through_lines) do
