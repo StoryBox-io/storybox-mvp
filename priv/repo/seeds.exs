@@ -133,6 +133,104 @@ if long_road = all_stories["The Long Road Home"] do
     IO.puts("  Created world for The Long Road Home")
   end
 
+  # Sequence pieces and versions (only seed if none exist yet)
+  existing_sequence_count =
+    Storybox.Stories.SequencePiece
+    |> Ash.Query.filter(story_id == ^long_road.id)
+    |> Ash.read!(authorize?: false)
+    |> length()
+
+  if existing_sequence_count == 0 do
+    # Act 1 — The Return
+    {:ok, piece_return} =
+      Storybox.Stories.SequencePiece
+      |> Ash.Changeset.for_create(:create, %{
+        title: "The Return",
+        act: "Act 1",
+        position: 1,
+        story_id: long_road.id
+      })
+      |> Ash.create(authorize?: false)
+
+    {:ok, return_v1} =
+      Storybox.Stories.SequenceVersion
+      |> Ash.Changeset.for_create(:create, %{
+        sequence_piece_id: piece_return.id,
+        content_uri: "storybox://stories/#{long_road.id}/sequences/#{piece_return.id}/v1",
+        version_number: 1,
+        upstream_status: :current,
+        weights: %{"preference" => 0.8, "theme" => 0.6}
+      })
+      |> Ash.create(authorize?: false)
+
+    {:ok, _return_v2} =
+      Storybox.Stories.SequenceVersion
+      |> Ash.Changeset.for_create(:create, %{
+        sequence_piece_id: piece_return.id,
+        content_uri: "storybox://stories/#{long_road.id}/sequences/#{piece_return.id}/v2",
+        version_number: 2,
+        upstream_status: :stale,
+        weights: %{}
+      })
+      |> Ash.create(authorize?: false)
+
+    # Approve v1
+    piece_return
+    |> Ash.Changeset.for_update(:approve_version, %{version_id: return_v1.id})
+    |> Ash.update!(authorize?: false)
+
+    # Act 1 — Old Faces
+    {:ok, piece_old_faces} =
+      Storybox.Stories.SequencePiece
+      |> Ash.Changeset.for_create(:create, %{
+        title: "Old Faces",
+        act: "Act 1",
+        position: 2,
+        story_id: long_road.id
+      })
+      |> Ash.create(authorize?: false)
+
+    {:ok, old_faces_v1} =
+      Storybox.Stories.SequenceVersion
+      |> Ash.Changeset.for_create(:create, %{
+        sequence_piece_id: piece_old_faces.id,
+        content_uri: "storybox://stories/#{long_road.id}/sequences/#{piece_old_faces.id}/v1",
+        version_number: 1,
+        upstream_status: :current,
+        weights: %{"preference" => 0.5}
+      })
+      |> Ash.create(authorize?: false)
+
+    # Approve v1
+    piece_old_faces
+    |> Ash.Changeset.for_update(:approve_version, %{version_id: old_faces_v1.id})
+    |> Ash.update!(authorize?: false)
+
+    # Act 2 — The Silence (no approved version)
+    {:ok, _piece_silence} =
+      Storybox.Stories.SequencePiece
+      |> Ash.Changeset.for_create(:create, %{
+        title: "The Silence",
+        act: "Act 2",
+        position: 3,
+        story_id: long_road.id
+      })
+      |> Ash.create(authorize?: false)
+
+    # (no act) — Epilogue (no versions)
+    {:ok, _piece_epilogue} =
+      Storybox.Stories.SequencePiece
+      |> Ash.Changeset.for_create(:create, %{
+        title: "Epilogue",
+        act: nil,
+        position: 4,
+        story_id: long_road.id
+      })
+      |> Ash.create(authorize?: false)
+
+    IO.puts("  Created 4 sequence pieces for The Long Road Home")
+  end
+
   # Synopsis versions (only seed if none exist yet)
   if existing_synopsis_count == 0 do
     Ash.ActionInput.for_action(Storybox.Stories.SynopsisVersion, :create_version, %{
