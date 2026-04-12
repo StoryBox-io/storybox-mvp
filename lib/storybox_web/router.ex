@@ -32,6 +32,7 @@ defmodule StoryboxWeb.Router do
       on_mount: AshAuthentication.Phoenix.LiveSession do
       live "/", StoryListLive
       live "/stories/:story_id", StoryOverviewLive
+      live "/stories/:story_id/treatment", TreatmentLive
     end
   end
 
