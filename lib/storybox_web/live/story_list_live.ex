@@ -36,7 +36,11 @@ defmodule StoryboxWeb.StoryListLive do
             <%= for story <- @stories do %>
               <li class="card bg-base-200 shadow-sm">
                 <div class="card-body py-4">
-                  <h2 class="card-title text-lg">{story.title}</h2>
+                  <h2 class="card-title text-lg">
+                    <.link navigate={~p"/stories/#{story.id}"} class="hover:underline">
+                      {story.title}
+                    </.link>
+                  </h2>
                   <%= if story.logline do %>
                     <p class="text-base-content/70 text-sm">{story.logline}</p>
                   <% end %>
