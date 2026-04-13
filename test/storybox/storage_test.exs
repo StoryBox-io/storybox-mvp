@@ -42,5 +42,20 @@ defmodule Storybox.StorageTest do
       assert {:ok, ^uri} = Storage.put_content(uri, content)
       assert {:ok, ^content} = Storage.get_content(uri)
     end
+
+    test "round-trips content containing non-ASCII characters unchanged" do
+      uri = Storage.uri_for_synopsis(@story_id, 98)
+
+      content =
+        "Frank carries something back with him \u2014 something that has no name.\n\u201CHe never told us,\u201D she said."
+
+      assert {:ok, ^uri} = Storage.put_content(uri, content)
+      assert {:ok, retrieved} = Storage.get_content(uri)
+
+      assert retrieved == content,
+             "non-ASCII characters were mangled: #{inspect(retrieved)}"
+
+      assert String.valid?(retrieved), "retrieved content is not valid UTF-8"
+    end
   end
 end
