@@ -28,7 +28,7 @@ defmodule Storybox.Storage do
     path = uri_to_path(uri)
 
     case ExAws.S3.get_object(@bucket, path) |> ExAws.request() do
-      {:ok, %{body: body}} -> {:ok, body}
+      {:ok, %{body: body}} -> {:ok, IO.iodata_to_binary(body)}
       {:error, reason} -> {:error, reason}
     end
   end

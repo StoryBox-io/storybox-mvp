@@ -106,6 +106,32 @@ defmodule StoryboxWeb.SynopsisViewTest do
       assert json_response(conn, 503)["error"] == "content unavailable"
     end
 
+    test "returns non-ASCII characters (em dash, smart quotes) without double-encoding", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token
+    } do
+      content = "Frank carries something back \u2014 something that has no name."
+
+      {:ok, _v} =
+        Storybox.Stories.SynopsisVersion
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          content: content
+        })
+        |> Ash.run_action()
+
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis")
+
+      body = json_response(conn, 200)
+
+      assert body["content"] == content,
+             "content was double-encoded: #{inspect(body["content"])}"
+    end
+
     test "returns 403 when token is scoped to a different story", %{
       conn: conn,
       other_story: other_story,
