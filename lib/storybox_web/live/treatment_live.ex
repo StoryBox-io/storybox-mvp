@@ -282,7 +282,9 @@ defmodule StoryboxWeb.TreatmentLive do
 
     pieces
     |> Enum.group_by(& &1.act)
-    |> Enum.sort_by(fn {act, _} -> {is_nil(act), act} end)
+    |> Enum.sort_by(fn {_act, act_pieces} ->
+      Enum.min_by(act_pieces, & &1.position).position
+    end)
     |> Enum.map(fn {act, act_pieces} ->
       {act,
        Enum.map(act_pieces, fn piece ->

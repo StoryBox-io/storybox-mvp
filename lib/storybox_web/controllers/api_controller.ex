@@ -75,7 +75,7 @@ defmodule StoryboxWeb.ApiController do
     acts =
       pieces
       |> Enum.group_by(& &1.act)
-      |> Enum.sort_by(fn {act, _} -> {is_nil(act), act} end)
+      |> Enum.sort_by(fn {_act, seqs} -> Enum.min_by(seqs, & &1.position).position end)
       |> Enum.map(fn {act, seqs} ->
         %{
           act: act,
