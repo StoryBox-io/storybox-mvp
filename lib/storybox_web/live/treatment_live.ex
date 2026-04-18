@@ -233,6 +233,8 @@ defmodule StoryboxWeb.TreatmentLive do
           <label class="text-xs text-base-content/70 w-24 shrink-0">{tl}</label>
           <input
             type="range"
+            id={"range-#{@version.id}-#{tl}"}
+            phx-hook="RangeDisplay"
             name={"weights[#{tl}]"}
             min="0"
             max="1"
