@@ -3,6 +3,45 @@ defmodule StoryboxWeb.ApiController do
 
   require Ash.Query
 
+  def token(conn, %{"email" => email, "password" => password, "story_id" => story_id}) do
+    strategy = AshAuthentication.Info.strategy!(Storybox.Accounts.User, :password)
+
+    case AshAuthentication.Strategy.action(strategy, :sign_in, %{
+           email: email,
+           password: password
+         }) do
+      {:ok, user} ->
+        case Storybox.Stories.Story
+             |> Ash.Query.filter(id == ^story_id and user_id == ^user.id)
+             |> Ash.read_one(authorize?: false) do
+          {:ok, nil} ->
+            conn |> put_status(404) |> json(%{error: "story not found"})
+
+          {:ok, _story} ->
+            case Storybox.Accounts.ApiToken.generate(%{
+                   story_id: story_id,
+                   user_id: user.id
+                 }) do
+              {:ok, raw_token, _record} ->
+                json(conn, %{token: raw_token})
+
+              {:error, _} ->
+                conn |> put_status(500) |> json(%{error: "failed to generate token"})
+            end
+
+          {:error, _} ->
+            conn |> put_status(500) |> json(%{error: "internal error"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(401) |> json(%{error: "invalid credentials"})
+    end
+  end
+
+  def token(conn, _params) do
+    conn |> put_status(422) |> json(%{error: "email, password, and story_id are required"})
+  end
+
   def ping(conn, %{"story_id" => story_id}) do
     json(conn, %{status: "ok", story_id: story_id})
   end
