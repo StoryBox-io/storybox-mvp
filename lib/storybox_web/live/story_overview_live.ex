@@ -69,9 +69,17 @@ defmodule StoryboxWeb.StoryOverviewLive do
     ~H"""
     <Layouts.app flash={@flash} current_user={@current_user}>
       <div class="space-y-8">
-        <.link navigate={~p"/"} class="text-sm text-base-content/60 hover:text-base-content">
-          ← Back to stories
-        </.link>
+        <div class="flex items-center justify-between">
+          <.link navigate={~p"/"} class="text-sm text-base-content/60 hover:text-base-content">
+            ← Back to stories
+          </.link>
+          <.link
+            navigate={~p"/stories/#{@story.id}/treatment"}
+            class="text-sm text-base-content/60 hover:text-base-content"
+          >
+            View Treatment →
+          </.link>
+        </div>
 
         <div class="space-y-2">
           <h1 class="text-3xl font-bold">{@story.title}</h1>
