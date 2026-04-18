@@ -39,6 +39,12 @@ defmodule StoryboxWeb.Router do
   end
 
   scope "/api", StoryboxWeb do
+    pipe_through :api
+
+    post "/auth/token", ApiController, :token
+  end
+
+  scope "/api", StoryboxWeb do
     pipe_through [:api, :require_api_auth]
 
     get "/stories/:story_id/ping", ApiController, :ping
