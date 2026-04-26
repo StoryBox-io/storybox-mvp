@@ -1,4 +1,4 @@
-defmodule Storybox.Stories.SequencePiece do
+defmodule Storybox.Stories.TreatmentView do
   use Ash.Resource,
     domain: Storybox.Stories,
     data_layer: AshPostgres.DataLayer
@@ -6,7 +6,7 @@ defmodule Storybox.Stories.SequencePiece do
   require Ash.Query
 
   postgres do
-    table "sequence_pieces"
+    table "treatment_views"
     repo Storybox.Repo
   end
 
@@ -23,7 +23,7 @@ defmodule Storybox.Stories.SequencePiece do
 
   relationships do
     belongs_to :story, Storybox.Stories.Story, allow_nil?: false, public?: true
-    has_many :sequence_versions, Storybox.Stories.SequenceVersion, public?: true
+    has_many :treatment_pieces, Storybox.Stories.TreatmentPiece, public?: true
   end
 
   actions do
@@ -43,35 +43,35 @@ defmodule Storybox.Stories.SequencePiece do
     end
 
     action :create_version, :struct do
-      constraints instance_of: Storybox.Stories.SequenceVersion
+      constraints instance_of: Storybox.Stories.TreatmentPiece
       argument :content, :string, allow_nil?: false
-      argument :sequence_piece_id, :uuid, allow_nil?: false
+      argument :treatment_view_id, :uuid, allow_nil?: false
 
       run fn input, _context ->
-        piece_id = input.arguments.sequence_piece_id
+        view_id = input.arguments.treatment_view_id
 
-        [piece] =
-          Storybox.Stories.SequencePiece
-          |> Ash.Query.filter(id == ^piece_id)
+        [view] =
+          Storybox.Stories.TreatmentView
+          |> Ash.Query.filter(id == ^view_id)
           |> Ash.read!(authorize?: false)
 
-        existing_versions =
-          Storybox.Stories.SequenceVersion
-          |> Ash.Query.filter(sequence_piece_id == ^piece_id)
+        existing_pieces =
+          Storybox.Stories.TreatmentPiece
+          |> Ash.Query.filter(treatment_view_id == ^view_id)
           |> Ash.read!(authorize?: false)
 
         next_version_number =
-          existing_versions
+          existing_pieces
           |> Enum.map(& &1.version_number)
           |> Enum.max(fn -> 0 end)
           |> Kernel.+(1)
 
-        uri = Storybox.Storage.uri_for_sequence(piece.story_id, piece_id, next_version_number)
+        uri = Storybox.Storage.uri_for_sequence(view.story_id, view_id, next_version_number)
 
         with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content) do
-          Storybox.Stories.SequenceVersion
+          Storybox.Stories.TreatmentPiece
           |> Ash.Changeset.for_create(:create, %{
-            sequence_piece_id: piece_id,
+            treatment_view_id: view_id,
             content_uri: uri,
             version_number: next_version_number,
             upstream_status: :current,

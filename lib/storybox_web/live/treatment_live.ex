@@ -52,12 +52,12 @@ defmodule StoryboxWeb.TreatmentLive do
   def handle_event("set_weights", %{"version_id" => version_id, "weights" => raw_weights}, socket) do
     weights = parse_weights(raw_weights)
 
-    version =
-      Storybox.Stories.SequenceVersion
+    piece =
+      Storybox.Stories.TreatmentPiece
       |> Ash.Query.filter(id == ^version_id)
       |> Ash.read_one!(authorize?: false)
 
-    version
+    piece
     |> Ash.Changeset.for_update(:set_weights, %{weights: weights})
     |> Ash.update!(authorize?: false)
 
@@ -77,12 +77,12 @@ defmodule StoryboxWeb.TreatmentLive do
         %{"piece-id" => piece_id, "version-id" => version_id},
         socket
       ) do
-    piece =
-      Storybox.Stories.SequencePiece
+    view =
+      Storybox.Stories.TreatmentView
       |> Ash.Query.filter(id == ^piece_id)
       |> Ash.read_one!(authorize?: false)
 
-    piece
+    view
     |> Ash.Changeset.for_update(:approve_version, %{version_id: version_id})
     |> Ash.update!(authorize?: false)
 
@@ -110,62 +110,62 @@ defmodule StoryboxWeb.TreatmentLive do
         <%= if @acts == [] do %>
           <p class="text-base-content/60 text-sm">No sequences yet.</p>
         <% else %>
-          <%= for {act_label, pieces_with_versions} <- @acts do %>
+          <%= for {act_label, views_with_pieces} <- @acts do %>
             <section class="space-y-3">
               <h2 class="text-lg font-semibold text-base-content/80 border-b border-base-300 pb-1">
                 {act_label || "No act"}
               </h2>
               <div class="space-y-3">
-                <%= for {piece, versions} <- pieces_with_versions do %>
+                <%= for {view, pieces} <- views_with_pieces do %>
                   <div class="card bg-base-200 shadow-sm">
                     <div class="card-body py-4 space-y-3">
                       <div class="flex items-center gap-2">
-                        <span class="badge badge-outline badge-sm font-mono">#{piece.position}</span>
-                        <h3 class="font-semibold">{piece.title}</h3>
+                        <span class="badge badge-outline badge-sm font-mono">#{view.position}</span>
+                        <h3 class="font-semibold">{view.title}</h3>
                         <.link
-                          navigate={~p"/stories/#{@story.id}/sequences/#{piece.id}/script"}
+                          navigate={~p"/stories/#{@story.id}/sequences/#{view.id}/script"}
                           class="ml-auto text-sm text-base-content/60 hover:text-base-content"
                         >
                           Script →
                         </.link>
                       </div>
 
-                      <% primary = primary_version(piece, versions) %>
+                      <% primary = primary_piece(view, pieces) %>
                       <%= if primary && Map.get(@content, primary.id) do %>
                         <p class="text-sm text-base-content/80 whitespace-pre-wrap">
                           {Map.get(@content, primary.id)}
                         </p>
                       <% end %>
 
-                      <%= if versions == [] do %>
+                      <%= if pieces == [] do %>
                         <p class="text-base-content/50 text-sm">No versions yet.</p>
                       <% else %>
                         <div class="space-y-2">
-                          <%= for version <- versions do %>
-                            <% rs = review_status(version.weights, @story.through_lines) %>
+                          <%= for piece <- pieces do %>
+                            <% rs = review_status(piece.weights, @story.through_lines) %>
                             <div class={[
                               "rounded p-2 text-sm",
-                              if(version.id == piece.approved_version_id,
+                              if(piece.id == view.approved_version_id,
                                 do: "bg-base-300",
                                 else: ""
                               ),
                               if(rs == :unreviewed, do: "ring-2 ring-warning", else: "")
                             ]}>
                               <div class="flex flex-wrap items-center gap-2">
-                                <span class="font-mono font-semibold">v{version.version_number}</span>
+                                <span class="font-mono font-semibold">v{piece.version_number}</span>
 
-                                <%= if version.id == piece.approved_version_id do %>
+                                <%= if piece.id == view.approved_version_id do %>
                                   <span class="badge badge-success badge-sm">Approved</span>
                                 <% end %>
 
                                 <span class={[
                                   "badge badge-sm",
-                                  if(version.upstream_status == :stale,
+                                  if(piece.upstream_status == :stale,
                                     do: "badge-warning",
                                     else: "badge-ghost"
                                   )
                                 ]}>
-                                  {version.upstream_status}
+                                  {piece.upstream_status}
                                 </span>
 
                                 <span class={[
@@ -183,17 +183,17 @@ defmodule StoryboxWeb.TreatmentLive do
                                   <button
                                     class="btn btn-xs btn-ghost"
                                     phx-click="toggle_weight_form"
-                                    phx-value-version-id={version.id}
+                                    phx-value-version-id={piece.id}
                                   >
                                     Review
                                   </button>
 
-                                  <%= if version.id != piece.approved_version_id do %>
+                                  <%= if piece.id != view.approved_version_id do %>
                                     <button
                                       class="btn btn-xs btn-outline"
                                       phx-click="approve_version"
-                                      phx-value-piece-id={piece.id}
-                                      phx-value-version-id={version.id}
+                                      phx-value-piece-id={view.id}
+                                      phx-value-version-id={piece.id}
                                     >
                                       Approve
                                     </button>
@@ -201,9 +201,9 @@ defmodule StoryboxWeb.TreatmentLive do
                                 </div>
                               </div>
 
-                              <%= if MapSet.member?(@weight_forms, version.id) do %>
+                              <%= if MapSet.member?(@weight_forms, piece.id) do %>
                                 <.weight_form
-                                  version={version}
+                                  version={piece}
                                   through_lines={@story.through_lines}
                                 />
                               <% end %>
@@ -261,64 +261,63 @@ defmodule StoryboxWeb.TreatmentLive do
   end
 
   defp load_acts(story) do
-    pieces =
-      Storybox.Stories.SequencePiece
+    views =
+      Storybox.Stories.TreatmentView
       |> Ash.Query.filter(story_id == ^story.id)
       |> Ash.Query.sort(position: :asc)
       |> Ash.read!(authorize?: false)
 
-    piece_ids = Enum.map(pieces, & &1.id)
+    view_ids = Enum.map(views, & &1.id)
 
-    versions_by_piece =
-      case piece_ids do
+    pieces_by_view =
+      case view_ids do
         [] ->
           %{}
 
         ids ->
-          Storybox.Stories.SequenceVersion
-          |> Ash.Query.filter(sequence_piece_id in ^ids)
+          Storybox.Stories.TreatmentPiece
+          |> Ash.Query.filter(treatment_view_id in ^ids)
           |> Ash.Query.sort(version_number: :desc)
           |> Ash.read!(authorize?: false)
-          |> Enum.group_by(& &1.sequence_piece_id)
+          |> Enum.group_by(& &1.treatment_view_id)
       end
 
-    pieces
+    views
     |> Enum.group_by(& &1.act)
-    |> Enum.sort_by(fn {_act, act_pieces} ->
-      Enum.min_by(act_pieces, & &1.position).position
+    |> Enum.sort_by(fn {_act, act_views} ->
+      Enum.min_by(act_views, & &1.position).position
     end)
-    |> Enum.map(fn {act, act_pieces} ->
+    |> Enum.map(fn {act, act_views} ->
       {act,
-       Enum.map(act_pieces, fn piece ->
-         {piece, Map.get(versions_by_piece, piece.id, [])}
+       Enum.map(act_views, fn view ->
+         {view, Map.get(pieces_by_view, view.id, [])}
        end)}
     end)
   end
 
-  # Returns the approved version if set, otherwise the latest.
-  defp primary_version(piece, versions) do
-    case Enum.find(versions, &(&1.id == piece.approved_version_id)) do
-      nil -> List.first(versions)
+  defp primary_piece(view, pieces) do
+    case Enum.find(pieces, &(&1.id == view.approved_version_id)) do
+      nil -> List.first(pieces)
       approved -> approved
     end
   end
 
   defp fetch_primary_content(acts) do
     acts
-    |> Enum.flat_map(fn {_act, pieces_with_versions} ->
-      Enum.map(pieces_with_versions, fn {piece, versions} ->
-        primary_version(piece, versions)
+    |> Enum.flat_map(fn {_act, views_with_pieces} ->
+      Enum.map(views_with_pieces, fn {view, pieces} ->
+        primary_piece(view, pieces)
       end)
     end)
     |> Enum.reject(&is_nil/1)
-    |> Enum.map(fn version ->
+    |> Enum.map(fn piece ->
       content =
-        case Storybox.Storage.get_content(version.content_uri) do
+        case Storybox.Storage.get_content(piece.content_uri) do
           {:ok, text} -> text
           _ -> nil
         end
 
-      {version.id, content}
+      {piece.id, content}
     end)
     |> Map.new()
   end

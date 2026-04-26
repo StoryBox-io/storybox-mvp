@@ -50,7 +50,7 @@ defmodule StoryboxWeb.ApiController do
     story = conn.assigns.current_story
 
     latest =
-      Storybox.Stories.SynopsisVersion
+      Storybox.Stories.SynopsisView
       |> Ash.Query.filter(story_id == ^story.id)
       |> Ash.Query.sort(version_number: :desc)
       |> Ash.Query.limit(1)
@@ -62,13 +62,13 @@ defmodule StoryboxWeb.ApiController do
         |> put_status(404)
         |> json(%{error: "no synopsis found"})
 
-      {:ok, version} ->
-        case Storybox.Storage.get_content(version.content_uri) do
+      {:ok, view} ->
+        case Storybox.Storage.get_content(view.content_uri) do
           {:ok, content} ->
             json(conn, %{
               story_id: story.id,
-              version_number: version.version_number,
-              inserted_at: version.inserted_at,
+              version_number: view.version_number,
+              inserted_at: view.inserted_at,
               content: content
             })
 
@@ -88,31 +88,31 @@ defmodule StoryboxWeb.ApiController do
   def treatment_view(conn, _params) do
     story = conn.assigns.current_story
 
-    pieces =
-      Storybox.Stories.SequencePiece
+    views =
+      Storybox.Stories.TreatmentView
       |> Ash.Query.filter(story_id == ^story.id)
       |> Ash.Query.sort(position: :asc)
       |> Ash.read!(authorize?: false)
 
     approved_ids =
-      pieces
+      views
       |> Enum.map(& &1.approved_version_id)
       |> Enum.reject(&is_nil/1)
 
-    versions_by_id =
+    pieces_by_id =
       case approved_ids do
         [] ->
           %{}
 
         ids ->
-          Storybox.Stories.SequenceVersion
+          Storybox.Stories.TreatmentPiece
           |> Ash.Query.filter(id in ^ids)
           |> Ash.read!(authorize?: false)
           |> Map.new(&{&1.id, &1})
       end
 
     acts =
-      pieces
+      views
       |> Enum.group_by(& &1.act)
       |> Enum.sort_by(fn {act, seqs} ->
         {if(is_nil(act), do: 1, else: 0), Enum.min_by(seqs, & &1.position).position}
@@ -121,14 +121,14 @@ defmodule StoryboxWeb.ApiController do
         %{
           act: act,
           sequences:
-            Enum.map(seqs, fn piece ->
-              version = versions_by_id[piece.approved_version_id]
+            Enum.map(seqs, fn view ->
+              piece = pieces_by_id[view.approved_version_id]
 
               %{
-                id: piece.id,
-                title: piece.title,
-                position: piece.position,
-                approved_version: format_version(version)
+                id: view.id,
+                title: view.title,
+                position: view.position,
+                approved_version: format_version(piece)
               }
             end)
         }
@@ -149,46 +149,46 @@ defmodule StoryboxWeb.ApiController do
         conn |> put_status(400) |> json(%{error: reason})
 
       {:ok, mode, snapshot_id} ->
-        sequences =
-          Storybox.Stories.SequencePiece
+        treatment_views =
+          Storybox.Stories.TreatmentView
           |> Ash.Query.filter(story_id == ^story.id)
           |> Ash.Query.sort(position: :asc)
           |> Ash.read!(authorize?: false)
 
-        sequence_ids = Enum.map(sequences, & &1.id)
+        treatment_view_ids = Enum.map(treatment_views, & &1.id)
 
-        scene_pieces =
-          Storybox.Stories.ScenePiece
-          |> Ash.Query.filter(sequence_piece_id in ^sequence_ids)
+        script_views =
+          Storybox.Stories.ScriptView
+          |> Ash.Query.filter(treatment_view_id in ^treatment_view_ids)
           |> Ash.Query.sort(position: :asc)
           |> Ash.read!(authorize?: false)
 
-        scenes_by_sequence = Enum.group_by(scene_pieces, & &1.sequence_piece_id)
-        scene_piece_ids = Enum.map(scene_pieces, & &1.id)
+        scenes_by_sequence = Enum.group_by(script_views, & &1.treatment_view_id)
+        script_view_ids = Enum.map(script_views, & &1.id)
 
-        case resolve_script_versions(mode, snapshot_id, story.id, scene_pieces, scene_piece_ids) do
+        case resolve_script_versions(mode, snapshot_id, story.id, script_views, script_view_ids) do
           {:error, :snapshot_not_found} ->
             conn |> put_status(404) |> json(%{error: "snapshot not found"})
 
           {:ok, versions_map} ->
-            case build_script_scenes(scene_pieces, versions_map) do
+            case build_script_scenes(script_views, versions_map) do
               {:error, :content_unavailable} ->
                 conn |> put_status(503) |> json(%{error: "content unavailable"})
 
               {:ok, scenes_with_content} ->
                 result =
-                  sequences
-                  |> Enum.map(fn seq ->
+                  treatment_views
+                  |> Enum.map(fn tv ->
                     scenes =
                       scenes_by_sequence
-                      |> Map.get(seq.id, [])
+                      |> Map.get(tv.id, [])
                       |> Enum.map(&scenes_with_content[&1.id])
 
                     %{
-                      id: seq.id,
-                      title: seq.title,
-                      act: seq.act,
-                      position: seq.position,
+                      id: tv.id,
+                      title: tv.title,
+                      act: tv.act,
+                      position: tv.position,
                       scenes: scenes
                     }
                   end)
@@ -221,16 +221,16 @@ defmodule StoryboxWeb.ApiController do
 
   defp parse_script_mode(_), do: {:error, "mode is required"}
 
-  defp resolve_script_versions("latest", _snapshot_id, _story_id, _scene_pieces, scene_piece_ids) do
-    all_versions =
-      Storybox.Stories.SceneVersion
-      |> Ash.Query.filter(scene_piece_id in ^scene_piece_ids)
+  defp resolve_script_versions("latest", _snapshot_id, _story_id, _script_views, script_view_ids) do
+    all_pieces =
+      Storybox.Stories.ScriptPiece
+      |> Ash.Query.filter(script_view_id in ^script_view_ids)
       |> Ash.read!(authorize?: false)
 
     versions_map =
-      all_versions
-      |> Enum.group_by(& &1.scene_piece_id)
-      |> Map.new(fn {id, vs} -> {id, Enum.max_by(vs, & &1.version_number)} end)
+      all_pieces
+      |> Enum.group_by(& &1.script_view_id)
+      |> Map.new(fn {id, ps} -> {id, Enum.max_by(ps, & &1.version_number)} end)
 
     {:ok, versions_map}
   end
@@ -239,35 +239,35 @@ defmodule StoryboxWeb.ApiController do
          "approved",
          _snapshot_id,
          _story_id,
-         scene_pieces,
-         _scene_piece_ids
+         script_views,
+         _script_view_ids
        ) do
     approved_ids =
-      scene_pieces
+      script_views
       |> Enum.map(& &1.approved_version_id)
       |> Enum.reject(&is_nil/1)
 
-    versions_by_id =
+    pieces_by_id =
       case approved_ids do
         [] ->
           %{}
 
         ids ->
-          Storybox.Stories.SceneVersion
+          Storybox.Stories.ScriptPiece
           |> Ash.Query.filter(id in ^ids)
           |> Ash.read!(authorize?: false)
           |> Map.new(&{&1.id, &1})
       end
 
     versions_map =
-      Map.new(scene_pieces, fn piece ->
-        {piece.id, versions_by_id[piece.approved_version_id]}
+      Map.new(script_views, fn view ->
+        {view.id, pieces_by_id[view.approved_version_id]}
       end)
 
     {:ok, versions_map}
   end
 
-  defp resolve_script_versions("snapshot", snapshot_id, story_id, scene_pieces, _scene_piece_ids) do
+  defp resolve_script_versions("snapshot", snapshot_id, story_id, script_views, _script_view_ids) do
     result =
       Storybox.Stories.ScriptSnapshot
       |> Ash.Query.filter(id == ^snapshot_id and story_id == ^story_id)
@@ -278,24 +278,24 @@ defmodule StoryboxWeb.ApiController do
         {:error, :snapshot_not_found}
 
       {:ok, snapshot} ->
-        version_ids = Map.values(snapshot.entries)
+        piece_ids = Map.values(snapshot.entries)
 
-        versions_by_id =
-          case version_ids do
+        pieces_by_id =
+          case piece_ids do
             [] ->
               %{}
 
             ids ->
-              Storybox.Stories.SceneVersion
+              Storybox.Stories.ScriptPiece
               |> Ash.Query.filter(id in ^ids)
               |> Ash.read!(authorize?: false)
               |> Map.new(&{to_string(&1.id), &1})
           end
 
         versions_map =
-          Map.new(scene_pieces, fn piece ->
-            version_id = snapshot.entries[to_string(piece.id)]
-            {piece.id, versions_by_id[version_id]}
+          Map.new(script_views, fn view ->
+            piece_id = snapshot.entries[to_string(view.id)]
+            {view.id, pieces_by_id[piece_id]}
           end)
 
         {:ok, versions_map}
@@ -305,32 +305,32 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  defp build_script_scenes(scene_pieces, versions_map) do
-    Enum.reduce_while(scene_pieces, {:ok, %{}}, fn piece, {:ok, acc} ->
-      version = versions_map[piece.id]
+  defp build_script_scenes(script_views, versions_map) do
+    Enum.reduce_while(script_views, {:ok, %{}}, fn view, {:ok, acc} ->
+      piece = versions_map[view.id]
 
-      case fetch_scene_content(version) do
+      case fetch_scene_content(piece) do
         {:error, :content_unavailable} ->
           {:halt, {:error, :content_unavailable}}
 
         {:ok, content} ->
           scene = %{
-            id: piece.id,
-            title: piece.title,
-            position: piece.position,
-            version: format_version(version),
+            id: view.id,
+            title: view.title,
+            position: view.position,
+            version: format_version(piece),
             content: content
           }
 
-          {:cont, {:ok, Map.put(acc, piece.id, scene)}}
+          {:cont, {:ok, Map.put(acc, view.id, scene)}}
       end
     end)
   end
 
   defp fetch_scene_content(nil), do: {:ok, nil}
 
-  defp fetch_scene_content(version) do
-    case Storybox.Storage.get_content(version.content_uri) do
+  defp fetch_scene_content(piece) do
+    case Storybox.Storage.get_content(piece.content_uri) do
       {:ok, content} -> {:ok, content}
       {:error, _} -> {:error, :content_unavailable}
     end
@@ -339,32 +339,32 @@ defmodule StoryboxWeb.ApiController do
   def sequence_detail(conn, %{"id" => id}) do
     story = conn.assigns.current_story
 
-    case Storybox.Stories.SequencePiece
+    case Storybox.Stories.TreatmentView
          |> Ash.Query.filter(id == ^id and story_id == ^story.id)
          |> Ash.read_one(authorize?: false) do
       {:ok, nil} ->
         conn |> put_status(404) |> json(%{error: "not found"})
 
-      {:ok, piece} ->
-        version_query =
-          if piece.approved_version_id do
-            Storybox.Stories.SequenceVersion
-            |> Ash.Query.filter(id == ^piece.approved_version_id)
+      {:ok, view} ->
+        piece_query =
+          if view.approved_version_id do
+            Storybox.Stories.TreatmentPiece
+            |> Ash.Query.filter(id == ^view.approved_version_id)
             |> Ash.read_one(authorize?: false)
           else
-            Storybox.Stories.SequenceVersion
-            |> Ash.Query.filter(sequence_piece_id == ^piece.id)
+            Storybox.Stories.TreatmentPiece
+            |> Ash.Query.filter(treatment_view_id == ^view.id)
             |> Ash.Query.sort(version_number: :desc)
             |> Ash.Query.limit(1)
             |> Ash.read_one(authorize?: false)
           end
 
-        case version_query do
+        case piece_query do
           {:ok, nil} ->
             conn |> put_status(404) |> json(%{error: "no version available"})
 
-          {:ok, version} ->
-            case Storybox.Storage.get_content(version.content_uri) do
+          {:ok, piece} ->
+            case Storybox.Storage.get_content(piece.content_uri) do
               {:ok, content} ->
                 characters =
                   Storybox.Stories.Character
@@ -377,11 +377,11 @@ defmodule StoryboxWeb.ApiController do
                   |> Ash.read_one!(authorize?: false)
 
                 json(conn, %{
-                  id: piece.id,
-                  title: piece.title,
-                  act: piece.act,
-                  position: piece.position,
-                  version: format_version(version),
+                  id: view.id,
+                  title: view.title,
+                  act: view.act,
+                  position: view.position,
+                  version: format_version(piece),
                   content: content,
                   context: %{
                     world: format_world(world),
@@ -409,9 +409,9 @@ defmodule StoryboxWeb.ApiController do
          {:parse_from, {from_num, ""}} <- {:parse_from, Integer.parse(from_str)},
          {:parse_to, {to_num, ""}} <- {:parse_to, Integer.parse(to_str)},
          {:from_sv, {:ok, from_sv}} when not is_nil(from_sv) <-
-           {:from_sv, load_synopsis_version(story.id, from_num)},
+           {:from_sv, load_synopsis_view(story.id, from_num)},
          {:to_sv, {:ok, to_sv}} when not is_nil(to_sv) <-
-           {:to_sv, load_synopsis_version(story.id, to_num)},
+           {:to_sv, load_synopsis_view(story.id, to_num)},
          {:from_content, {:ok, from_content}} <-
            {:from_content, Storybox.Storage.get_content(from_sv.content_uri)},
          {:to_content, {:ok, to_content}} <-
@@ -427,37 +427,37 @@ defmodule StoryboxWeb.ApiController do
           {:del, lines} -> %{op: "del", lines: lines}
         end)
 
-      pieces =
-        Storybox.Stories.SequencePiece
+      treatment_views =
+        Storybox.Stories.TreatmentView
         |> Ash.Query.filter(story_id == ^story.id)
         |> Ash.Query.sort(position: :asc)
         |> Ash.read!(authorize?: false)
 
       approved_ids =
-        pieces
+        treatment_views
         |> Enum.map(& &1.approved_version_id)
         |> Enum.reject(&is_nil/1)
 
-      versions_by_id =
+      pieces_by_id =
         case approved_ids do
           [] ->
             %{}
 
           ids ->
-            Storybox.Stories.SequenceVersion
+            Storybox.Stories.TreatmentPiece
             |> Ash.Query.filter(id in ^ids)
             |> Ash.read!(authorize?: false)
             |> Map.new(&{&1.id, &1})
         end
 
       {affected, unaffected, new} =
-        Enum.reduce(pieces, {[], [], []}, fn piece, {aff, unaff, new_acc} ->
-          version = versions_by_id[piece.approved_version_id]
-          formatted = format_piece(piece, version)
+        Enum.reduce(treatment_views, {[], [], []}, fn view, {aff, unaff, new_acc} ->
+          piece = pieces_by_id[view.approved_version_id]
+          formatted = format_piece(view, piece)
 
           cond do
-            is_nil(piece.approved_version_id) -> {aff, unaff, [formatted | new_acc]}
-            version && version.upstream_status == :stale -> {[formatted | aff], unaff, new_acc}
+            is_nil(view.approved_version_id) -> {aff, unaff, [formatted | new_acc]}
+            piece && piece.upstream_status == :stale -> {[formatted | aff], unaff, new_acc}
             true -> {aff, [formatted | unaff], new_acc}
           end
         end)
@@ -503,31 +503,31 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  defp load_synopsis_version(story_id, version_number) do
-    Storybox.Stories.SynopsisVersion
+  defp load_synopsis_view(story_id, version_number) do
+    Storybox.Stories.SynopsisView
     |> Ash.Query.filter(story_id == ^story_id and version_number == ^version_number)
     |> Ash.read_one(authorize?: false)
   end
 
-  defp format_piece(piece, version) do
+  defp format_piece(view, piece) do
     %{
-      id: piece.id,
-      title: piece.title,
-      act: piece.act,
-      position: piece.position,
-      approved_version: format_version(version)
+      id: view.id,
+      title: view.title,
+      act: view.act,
+      position: view.position,
+      approved_version: format_version(piece)
     }
   end
 
   defp format_version(nil), do: nil
 
-  defp format_version(version) do
+  defp format_version(piece) do
     %{
-      id: version.id,
-      version_number: version.version_number,
-      upstream_status: version.upstream_status,
-      weights: version.weights,
-      inserted_at: version.inserted_at
+      id: piece.id,
+      version_number: piece.version_number,
+      upstream_status: piece.upstream_status,
+      weights: piece.weights,
+      inserted_at: piece.inserted_at
     }
   end
 
@@ -549,21 +549,21 @@ defmodule StoryboxWeb.ApiController do
     if is_nil(content) || content == "" do
       conn |> put_status(400) |> json(%{error: "content is required"})
     else
-      piece =
-        Storybox.Stories.SequencePiece
+      view =
+        Storybox.Stories.TreatmentView
         |> Ash.Query.filter(id == ^id and story_id == ^story.id)
         |> Ash.read!(authorize?: false)
         |> List.first()
 
-      if piece do
-        case Storybox.Stories.SequencePiece
+      if view do
+        case Storybox.Stories.TreatmentView
              |> Ash.ActionInput.for_action(:create_version, %{
                content: content,
-               sequence_piece_id: piece.id
+               treatment_view_id: view.id
              })
              |> Ash.run_action(authorize?: false) do
-          {:ok, version} ->
-            conn |> put_status(201) |> json(format_version(version))
+          {:ok, piece} ->
+            conn |> put_status(201) |> json(format_version(piece))
 
           {:error, _} ->
             conn |> put_status(503) |> json(%{error: "storage error"})
@@ -581,29 +581,29 @@ defmodule StoryboxWeb.ApiController do
     if is_nil(content) || content == "" do
       conn |> put_status(400) |> json(%{error: "content is required"})
     else
-      scene =
-        Storybox.Stories.ScenePiece
+      script_view =
+        Storybox.Stories.ScriptView
         |> Ash.Query.filter(id == ^id)
         |> Ash.read!(authorize?: false)
         |> List.first()
 
       owner =
-        if scene do
-          Storybox.Stories.SequencePiece
-          |> Ash.Query.filter(id == ^scene.sequence_piece_id and story_id == ^story.id)
+        if script_view do
+          Storybox.Stories.TreatmentView
+          |> Ash.Query.filter(id == ^script_view.treatment_view_id and story_id == ^story.id)
           |> Ash.read!(authorize?: false)
           |> List.first()
         end
 
-      if scene && owner do
-        case Storybox.Stories.ScenePiece
+      if script_view && owner do
+        case Storybox.Stories.ScriptView
              |> Ash.ActionInput.for_action(:create_version, %{
                content: content,
-               scene_piece_id: scene.id
+               script_view_id: script_view.id
              })
              |> Ash.run_action(authorize?: false) do
-          {:ok, version} ->
-            conn |> put_status(201) |> json(format_version(version))
+          {:ok, piece} ->
+            conn |> put_status(201) |> json(format_version(piece))
 
           {:error, _} ->
             conn |> put_status(503) |> json(%{error: "storage error"})
@@ -617,52 +617,52 @@ defmodule StoryboxWeb.ApiController do
   def upstream_changes(conn, _params) do
     story = conn.assigns.current_story
 
-    seq_piece_ids =
-      Storybox.Stories.SequencePiece
+    treatment_view_ids =
+      Storybox.Stories.TreatmentView
       |> Ash.Query.filter(story_id == ^story.id)
       |> Ash.read!(authorize?: false)
       |> Enum.map(& &1.id)
 
-    scene_piece_ids =
-      case seq_piece_ids do
+    script_view_ids =
+      case treatment_view_ids do
         [] ->
           []
 
         ids ->
-          Storybox.Stories.ScenePiece
-          |> Ash.Query.filter(sequence_piece_id in ^ids)
+          Storybox.Stories.ScriptView
+          |> Ash.Query.filter(treatment_view_id in ^ids)
           |> Ash.read!(authorize?: false)
           |> Enum.map(& &1.id)
       end
 
-    seq_version_ids =
-      case seq_piece_ids do
+    treatment_piece_ids =
+      case treatment_view_ids do
         [] ->
           []
 
         ids ->
-          Storybox.Stories.SequenceVersion
-          |> Ash.Query.filter(sequence_piece_id in ^ids)
+          Storybox.Stories.TreatmentPiece
+          |> Ash.Query.filter(treatment_view_id in ^ids)
           |> Ash.read!(authorize?: false)
           |> Enum.map(& &1.id)
       end
 
-    scene_version_ids =
-      case scene_piece_ids do
+    script_piece_ids =
+      case script_view_ids do
         [] ->
           []
 
         ids ->
-          Storybox.Stories.SceneVersion
-          |> Ash.Query.filter(scene_piece_id in ^ids)
+          Storybox.Stories.ScriptPiece
+          |> Ash.Query.filter(script_view_id in ^ids)
           |> Ash.read!(authorize?: false)
           |> Enum.map(& &1.id)
       end
 
-    all_version_ids = seq_version_ids ++ scene_version_ids
+    all_piece_ids = treatment_piece_ids ++ script_piece_ids
 
     changes =
-      case all_version_ids do
+      case all_piece_ids do
         [] ->
           []
 

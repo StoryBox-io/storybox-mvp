@@ -29,7 +29,7 @@ defmodule StoryboxWeb.TreatmentDiffTest do
 
     # v1 — "Act II: The conflict grows." will appear as a del
     {:ok, _sv1} =
-      Storybox.Stories.SynopsisVersion
+      Storybox.Stories.SynopsisView
       |> Ash.ActionInput.for_action(:create_version, %{
         story_id: story.id,
         content: "Act I: The hero begins.\nAct II: The conflict grows."
@@ -38,7 +38,7 @@ defmodule StoryboxWeb.TreatmentDiffTest do
 
     # v2 — replaces the Act II line, adds Act III
     {:ok, _sv2} =
-      Storybox.Stories.SynopsisVersion
+      Storybox.Stories.SynopsisView
       |> Ash.ActionInput.for_action(:create_version, %{
         story_id: story.id,
         content: "Act I: The hero begins.\nAct II: The conflict escalates.\nAct III: Resolution."
@@ -47,7 +47,7 @@ defmodule StoryboxWeb.TreatmentDiffTest do
 
     # "Opening" — has a current approved version (upstream_status: :current)
     {:ok, opening} =
-      Storybox.Stories.SequencePiece
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Opening",
         act: "Act I",
@@ -57,9 +57,9 @@ defmodule StoryboxWeb.TreatmentDiffTest do
       |> Ash.create(authorize?: false)
 
     {:ok, opening_v} =
-      Storybox.Stories.SequencePiece
+      Storybox.Stories.TreatmentView
       |> Ash.ActionInput.for_action(:create_version, %{
-        sequence_piece_id: opening.id,
+        treatment_view_id: opening.id,
         content: "EXT. PARK - DAY\n\nThe hero walks alone."
       })
       |> Ash.run_action(authorize?: false)
@@ -71,7 +71,7 @@ defmodule StoryboxWeb.TreatmentDiffTest do
 
     # "Midpoint" — has a stale approved version (upstream_status: :stale)
     {:ok, midpoint} =
-      Storybox.Stories.SequencePiece
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Midpoint",
         act: "Act II",
@@ -81,9 +81,9 @@ defmodule StoryboxWeb.TreatmentDiffTest do
       |> Ash.create(authorize?: false)
 
     {:ok, stale_v} =
-      Storybox.Stories.SequenceVersion
+      Storybox.Stories.TreatmentPiece
       |> Ash.Changeset.for_create(:create, %{
-        sequence_piece_id: midpoint.id,
+        treatment_view_id: midpoint.id,
         content_uri: "storybox://stories/#{story.id}/sequences/#{midpoint.id}/v1.fountain",
         version_number: 1,
         upstream_status: :stale,
@@ -98,7 +98,7 @@ defmodule StoryboxWeb.TreatmentDiffTest do
 
     # "Draft" — no approved version
     {:ok, _draft} =
-      Storybox.Stories.SequencePiece
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Draft",
         act: "Act I",

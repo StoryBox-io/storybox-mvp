@@ -33,14 +33,14 @@ defmodule StoryboxWeb.StoryOverviewLive do
               |> Ash.Query.filter(story_id == ^story.id)
               |> Ash.read_one!(authorize?: false)
 
-            synopsis_versions =
-              Storybox.Stories.SynopsisVersion
+            synopsis_views =
+              Storybox.Stories.SynopsisView
               |> Ash.Query.filter(story_id == ^story.id)
               |> Ash.Query.sort(version_number: :desc)
               |> Ash.read!(authorize?: false)
 
             latest_synopsis_content =
-              case synopsis_versions do
+              case synopsis_views do
                 [latest | _] ->
                   case Storybox.Storage.get_content(latest.content_uri) do
                     {:ok, content} -> content
@@ -56,7 +56,7 @@ defmodule StoryboxWeb.StoryOverviewLive do
                story: story,
                characters: characters,
                world: world,
-               synopsis_versions: synopsis_versions,
+               synopsis_views: synopsis_views,
                latest_synopsis_content: latest_synopsis_content,
                page_title: story.title
              )}
@@ -176,7 +176,7 @@ defmodule StoryboxWeb.StoryOverviewLive do
 
         <section class="space-y-3">
           <h2 class="text-xl font-semibold">Synopsis</h2>
-          <%= if @synopsis_versions == [] do %>
+          <%= if @synopsis_views == [] do %>
             <p class="text-base-content/60 text-sm">No synopsis versions yet.</p>
           <% else %>
             <%= if @latest_synopsis_content do %>
@@ -187,12 +187,12 @@ defmodule StoryboxWeb.StoryOverviewLive do
               </div>
             <% end %>
             <ul class="space-y-2">
-              <%= for {version, index} <- Enum.with_index(@synopsis_versions) do %>
+              <%= for {view, index} <- Enum.with_index(@synopsis_views) do %>
                 <li class="card bg-base-100 shadow-sm">
                   <div class="card-body py-3 flex flex-row items-center gap-3">
-                    <span class="font-mono font-semibold">v{version.version_number}</span>
+                    <span class="font-mono font-semibold">v{view.version_number}</span>
                     <span class="text-base-content/60 text-sm">
-                      {Calendar.strftime(version.inserted_at, "%B %-d, %Y")}
+                      {Calendar.strftime(view.inserted_at, "%B %-d, %Y")}
                     </span>
                     <%= if index == 0 do %>
                       <span class="badge badge-success badge-sm">Latest</span>

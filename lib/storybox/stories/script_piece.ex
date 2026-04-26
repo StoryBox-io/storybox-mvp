@@ -1,10 +1,10 @@
-defmodule Storybox.Stories.SequenceVersion do
+defmodule Storybox.Stories.ScriptPiece do
   use Ash.Resource,
     domain: Storybox.Stories,
     data_layer: AshPostgres.DataLayer
 
   postgres do
-    table "sequence_versions"
+    table "script_pieces"
     repo Storybox.Repo
   end
 
@@ -25,14 +25,14 @@ defmodule Storybox.Stories.SequenceVersion do
   end
 
   relationships do
-    belongs_to :sequence_piece, Storybox.Stories.SequencePiece, allow_nil?: false, public?: true
+    belongs_to :script_view, Storybox.Stories.ScriptView, allow_nil?: false, public?: true
   end
 
   actions do
     defaults [:read]
 
     create :create do
-      accept [:sequence_piece_id, :content_uri, :version_number, :upstream_status, :weights]
+      accept [:script_view_id, :content_uri, :version_number, :upstream_status, :weights]
     end
 
     update :mark_stale do

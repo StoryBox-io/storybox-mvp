@@ -1,4 +1,4 @@
-defmodule Storybox.Stories.SynopsisVersion do
+defmodule Storybox.Stories.SynopsisView do
   use Ash.Resource,
     domain: Storybox.Stories,
     data_layer: AshPostgres.DataLayer
@@ -6,7 +6,7 @@ defmodule Storybox.Stories.SynopsisVersion do
   require Ash.Query
 
   postgres do
-    table "synopsis_versions"
+    table "synopsis_views"
     repo Storybox.Repo
   end
 
@@ -31,20 +31,20 @@ defmodule Storybox.Stories.SynopsisVersion do
     end
 
     action :create_version, :struct do
-      constraints instance_of: Storybox.Stories.SynopsisVersion
+      constraints instance_of: Storybox.Stories.SynopsisView
       argument :content, :string, allow_nil?: false
       argument :story_id, :uuid, allow_nil?: false
 
       run fn input, _context ->
         story_id = input.arguments.story_id
 
-        existing_versions =
-          Storybox.Stories.SynopsisVersion
+        existing_views =
+          Storybox.Stories.SynopsisView
           |> Ash.Query.filter(story_id == ^story_id)
           |> Ash.read!(authorize?: false)
 
         next_version_number =
-          existing_versions
+          existing_views
           |> Enum.map(& &1.version_number)
           |> Enum.max(fn -> 0 end)
           |> Kernel.+(1)
@@ -52,7 +52,7 @@ defmodule Storybox.Stories.SynopsisVersion do
         uri = Storybox.Storage.uri_for_synopsis(story_id, next_version_number)
 
         with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content) do
-          Storybox.Stories.SynopsisVersion
+          Storybox.Stories.SynopsisView
           |> Ash.Changeset.for_create(:create, %{
             story_id: story_id,
             content_uri: uri,

@@ -5,11 +5,11 @@ defmodule StoryboxWeb.PieceVersionsTest do
 
   # Shared setup creates:
   #
-  #   user ──── story ──── seq_1 ──── seq_v1 (v1, existing)
-  #          │              └───── scene_1 ── scene_v1 (v1, existing)
-  #          └── other_story ── other_seq ── other_scene
+  #   user ──── story ──── tv_1 ──── tp_v1 (v1, existing)
+  #          │              └───── sv_1 ── sp_v1 (v1, existing)
+  #          └── other_story ── other_tv ── other_sv
   #
-  # raw_token is scoped to story. other_seq/other_scene are used for cross-story 404 tests.
+  # raw_token is scoped to story. other_tv/other_sv are used for cross-story 404 tests.
 
   setup do
     {:ok, user} =
@@ -33,30 +33,30 @@ defmodule StoryboxWeb.PieceVersionsTest do
 
     {:ok, raw_token, _} = ApiToken.generate(%{story_id: story.id, user_id: user.id})
 
-    {:ok, seq_1} =
-      Storybox.Stories.SequencePiece
+    {:ok, tv_1} =
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
-        title: "Seq",
+        title: "Act I",
         act: "Act I",
         position: 1,
         story_id: story.id
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, scene_1} =
-      Storybox.Stories.ScenePiece
+    {:ok, sv_1} =
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Scene",
         position: 1,
-        sequence_piece_id: seq_1.id
+        treatment_view_id: tv_1.id
       })
       |> Ash.create(authorize?: false)
 
     # Existing v1 records created directly (bypasses MinIO in setup)
-    {:ok, _seq_v1} =
-      Storybox.Stories.SequenceVersion
+    {:ok, _tp_v1} =
+      Storybox.Stories.TreatmentPiece
       |> Ash.Changeset.for_create(:create, %{
-        sequence_piece_id: seq_1.id,
+        treatment_view_id: tv_1.id,
         content_uri: "storybox://test/seq/v1.fountain",
         version_number: 1,
         upstream_status: :current,
@@ -64,10 +64,10 @@ defmodule StoryboxWeb.PieceVersionsTest do
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, _scene_v1} =
-      Storybox.Stories.SceneVersion
+    {:ok, _sp_v1} =
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        scene_piece_id: scene_1.id,
+        script_view_id: sv_1.id,
         content_uri: "storybox://test/scene/v1.fountain",
         version_number: 1,
         upstream_status: :current,
@@ -75,30 +75,30 @@ defmodule StoryboxWeb.PieceVersionsTest do
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, other_seq} =
-      Storybox.Stories.SequencePiece
+    {:ok, other_tv} =
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
-        title: "Other Seq",
+        title: "Other Act",
         position: 1,
         story_id: other_story.id
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, other_scene} =
-      Storybox.Stories.ScenePiece
+    {:ok, other_sv} =
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Other Scene",
         position: 1,
-        sequence_piece_id: other_seq.id
+        treatment_view_id: other_tv.id
       })
       |> Ash.create(authorize?: false)
 
     %{
       story: story,
-      seq_1: seq_1,
-      scene_1: scene_1,
-      other_seq: other_seq,
-      other_scene: other_scene,
+      tv_1: tv_1,
+      sv_1: sv_1,
+      other_tv: other_tv,
+      other_sv: other_sv,
       raw_token: raw_token
     }
   end
@@ -107,13 +107,13 @@ defmodule StoryboxWeb.PieceVersionsTest do
     test "creates a new version and returns 201", %{
       conn: conn,
       story: story,
-      seq_1: seq_1,
+      tv_1: tv_1,
       raw_token: raw_token
     } do
       conn =
         conn
         |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/sequences/#{seq_1.id}/versions", %{
+        |> post("/api/stories/#{story.id}/sequences/#{tv_1.id}/versions", %{
           "content" => "EXT. PARK - DAY\nSomething happens."
         })
 
@@ -127,13 +127,13 @@ defmodule StoryboxWeb.PieceVersionsTest do
     test "returns version_number 2 when a prior version already exists", %{
       conn: conn,
       story: story,
-      seq_1: seq_1,
+      tv_1: tv_1,
       raw_token: raw_token
     } do
       conn =
         conn
         |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/sequences/#{seq_1.id}/versions", %{
+        |> post("/api/stories/#{story.id}/sequences/#{tv_1.id}/versions", %{
           "content" => "EXT. PARK - DAY\nNew content."
         })
 
@@ -143,13 +143,13 @@ defmodule StoryboxWeb.PieceVersionsTest do
     test "returns 400 when content is missing", %{
       conn: conn,
       story: story,
-      seq_1: seq_1,
+      tv_1: tv_1,
       raw_token: raw_token
     } do
       conn =
         conn
         |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/sequences/#{seq_1.id}/versions", %{})
+        |> post("/api/stories/#{story.id}/sequences/#{tv_1.id}/versions", %{})
 
       assert json_response(conn, 400)["error"] == "content is required"
     end
@@ -157,13 +157,13 @@ defmodule StoryboxWeb.PieceVersionsTest do
     test "returns 400 when content is empty string", %{
       conn: conn,
       story: story,
-      seq_1: seq_1,
+      tv_1: tv_1,
       raw_token: raw_token
     } do
       conn =
         conn
         |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/sequences/#{seq_1.id}/versions", %{"content" => ""})
+        |> post("/api/stories/#{story.id}/sequences/#{tv_1.id}/versions", %{"content" => ""})
 
       assert json_response(conn, 400)["error"] == "content is required"
     end
@@ -171,13 +171,13 @@ defmodule StoryboxWeb.PieceVersionsTest do
     test "returns 404 when sequence belongs to a different story", %{
       conn: conn,
       story: story,
-      other_seq: other_seq,
+      other_tv: other_tv,
       raw_token: raw_token
     } do
       conn =
         conn
         |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/sequences/#{other_seq.id}/versions", %{
+        |> post("/api/stories/#{story.id}/sequences/#{other_tv.id}/versions", %{
           "content" => "Some content."
         })
 
@@ -207,13 +207,13 @@ defmodule StoryboxWeb.PieceVersionsTest do
     test "creates a new scene version and returns 201", %{
       conn: conn,
       story: story,
-      scene_1: scene_1,
+      sv_1: sv_1,
       raw_token: raw_token
     } do
       conn =
         conn
         |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/scenes/#{scene_1.id}/versions", %{
+        |> post("/api/stories/#{story.id}/scenes/#{sv_1.id}/versions", %{
           "content" => "INT. OFFICE - NIGHT\nThey argue."
         })
 
@@ -227,13 +227,13 @@ defmodule StoryboxWeb.PieceVersionsTest do
     test "returns version_number 2 when a prior version already exists", %{
       conn: conn,
       story: story,
-      scene_1: scene_1,
+      sv_1: sv_1,
       raw_token: raw_token
     } do
       conn =
         conn
         |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/scenes/#{scene_1.id}/versions", %{
+        |> post("/api/stories/#{story.id}/scenes/#{sv_1.id}/versions", %{
           "content" => "INT. OFFICE - NIGHT\nNew content."
         })
 
@@ -243,13 +243,13 @@ defmodule StoryboxWeb.PieceVersionsTest do
     test "returns 400 when content is missing", %{
       conn: conn,
       story: story,
-      scene_1: scene_1,
+      sv_1: sv_1,
       raw_token: raw_token
     } do
       conn =
         conn
         |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/scenes/#{scene_1.id}/versions", %{})
+        |> post("/api/stories/#{story.id}/scenes/#{sv_1.id}/versions", %{})
 
       assert json_response(conn, 400)["error"] == "content is required"
     end
@@ -257,13 +257,13 @@ defmodule StoryboxWeb.PieceVersionsTest do
     test "returns 404 when scene's parent sequence belongs to a different story", %{
       conn: conn,
       story: story,
-      other_scene: other_scene,
+      other_sv: other_sv,
       raw_token: raw_token
     } do
       conn =
         conn
         |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/scenes/#{other_scene.id}/versions", %{
+        |> post("/api/stories/#{story.id}/scenes/#{other_sv.id}/versions", %{
           "content" => "Some content."
         })
 

@@ -8,12 +8,12 @@ defmodule StoryboxWeb.ScriptLiveTest do
   # Seed data graph:
   #
   #   alice ──► "The Illusionist"  (through_lines: ["preference"])
-  #               └── Sequence "Act 1"  pos 1
-  #                     ├── Scene "Opening"  pos 1  approved → nil
-  #                     │     ├── v1  weights: {}      status: current
-  #                     │     └── v2  weights: {}      status: current
-  #                     └── Scene "Confrontation"  pos 2  approved → v1
-  #                           └── v1  weights: {preference→0.9}  status: current  [approved]
+  #               └── TreatmentView "Act 1"  pos 1
+  #                     ├── ScriptView "Opening"  pos 1  approved → nil
+  #                     │     ├── sp_v1  weights: {}      status: current
+  #                     │     └── sp_v2  weights: {}      status: current
+  #                     └── ScriptView "Confrontation"  pos 2  approved → sp_v1
+  #                           └── sp_v1  weights: {preference→0.9}  status: current  [approved]
 
   setup do
     {:ok, alice} =
@@ -34,8 +34,8 @@ defmodule StoryboxWeb.ScriptLiveTest do
       })
       |> Ash.create()
 
-    {:ok, sequence} =
-      Storybox.Stories.SequencePiece
+    {:ok, treatment_view} =
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Act 1",
         position: 1,
@@ -43,20 +43,20 @@ defmodule StoryboxWeb.ScriptLiveTest do
       })
       |> Ash.create()
 
-    # Scene "Opening" — two versions, no approved
-    {:ok, scene_opening} =
-      Storybox.Stories.ScenePiece
+    # ScriptView "Opening" — two versions, no approved
+    {:ok, sv_opening} =
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Opening",
         position: 1,
-        sequence_piece_id: sequence.id
+        treatment_view_id: treatment_view.id
       })
       |> Ash.create()
 
     {:ok, opening_v1} =
-      Storybox.Stories.SceneVersion
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        scene_piece_id: scene_opening.id,
+        script_view_id: sv_opening.id,
         content_uri: "storybox://test/opening/v1",
         version_number: 1,
         upstream_status: :current,
@@ -65,9 +65,9 @@ defmodule StoryboxWeb.ScriptLiveTest do
       |> Ash.create()
 
     {:ok, opening_v2} =
-      Storybox.Stories.SceneVersion
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        scene_piece_id: scene_opening.id,
+        script_view_id: sv_opening.id,
         content_uri: "storybox://test/opening/v2",
         version_number: 2,
         upstream_status: :current,
@@ -75,20 +75,20 @@ defmodule StoryboxWeb.ScriptLiveTest do
       })
       |> Ash.create()
 
-    # Scene "Confrontation" — one version, approved, already reviewed
-    {:ok, scene_confrontation} =
-      Storybox.Stories.ScenePiece
+    # ScriptView "Confrontation" — one version, approved, already reviewed
+    {:ok, sv_confrontation} =
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Confrontation",
         position: 2,
-        sequence_piece_id: sequence.id
+        treatment_view_id: treatment_view.id
       })
       |> Ash.create()
 
     {:ok, confrontation_v1} =
-      Storybox.Stories.SceneVersion
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        scene_piece_id: scene_confrontation.id,
+        script_view_id: sv_confrontation.id,
         content_uri: "storybox://test/confrontation/v1",
         version_number: 1,
         upstream_status: :current,
@@ -96,19 +96,19 @@ defmodule StoryboxWeb.ScriptLiveTest do
       })
       |> Ash.create()
 
-    {:ok, scene_confrontation} =
-      scene_confrontation
+    {:ok, sv_confrontation} =
+      sv_confrontation
       |> Ash.Changeset.for_update(:approve_version, %{version_id: confrontation_v1.id})
       |> Ash.update()
 
     %{
       alice: alice,
       story: story,
-      sequence: sequence,
-      scene_opening: scene_opening,
+      treatment_view: treatment_view,
+      sv_opening: sv_opening,
       opening_v1: opening_v1,
       opening_v2: opening_v2,
-      scene_confrontation: scene_confrontation,
+      sv_confrontation: sv_confrontation,
       confrontation_v1: confrontation_v1
     }
   end
@@ -118,10 +118,12 @@ defmodule StoryboxWeb.ScriptLiveTest do
       conn: conn,
       alice: alice,
       story: story,
-      sequence: sequence
+      treatment_view: treatment_view
     } do
       conn = log_in_user(conn, alice)
-      {:ok, _view, html} = live(conn, "/stories/#{story.id}/sequences/#{sequence.id}/script")
+
+      {:ok, _view, html} =
+        live(conn, "/stories/#{story.id}/sequences/#{treatment_view.id}/script")
 
       assert html =~ "ring-warning"
     end
@@ -130,11 +132,13 @@ defmodule StoryboxWeb.ScriptLiveTest do
       conn: conn,
       alice: alice,
       story: story,
-      sequence: sequence,
+      treatment_view: treatment_view,
       opening_v2: opening_v2
     } do
       conn = log_in_user(conn, alice)
-      {:ok, view, _html} = live(conn, "/stories/#{story.id}/sequences/#{sequence.id}/script")
+
+      {:ok, view, _html} =
+        live(conn, "/stories/#{story.id}/sequences/#{treatment_view.id}/script")
 
       html =
         view
@@ -151,11 +155,13 @@ defmodule StoryboxWeb.ScriptLiveTest do
       conn: conn,
       alice: alice,
       story: story,
-      sequence: sequence,
+      treatment_view: treatment_view,
       opening_v2: opening_v2
     } do
       conn = log_in_user(conn, alice)
-      {:ok, view, _html} = live(conn, "/stories/#{story.id}/sequences/#{sequence.id}/script")
+
+      {:ok, view, _html} =
+        live(conn, "/stories/#{story.id}/sequences/#{treatment_view.id}/script")
 
       # Open the form on the latest version (v2)
       view
@@ -175,7 +181,7 @@ defmodule StoryboxWeb.ScriptLiveTest do
 
       # Persisted in DB
       updated =
-        Storybox.Stories.SceneVersion
+        Storybox.Stories.ScriptPiece
         |> Ash.Query.filter(id == ^opening_v2.id)
         |> Ash.read_one!(authorize?: false)
 

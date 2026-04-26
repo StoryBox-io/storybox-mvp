@@ -1,4 +1,4 @@
-defmodule Storybox.Stories.SequencePieceTest do
+defmodule Storybox.Stories.TreatmentViewTest do
   use Storybox.DataCase
 
   require Ash.Query
@@ -21,10 +21,10 @@ defmodule Storybox.Stories.SequencePieceTest do
     %{story: story, user: user}
   end
 
-  describe "create sequence_piece" do
-    test "creates a sequence_piece with required fields", %{story: story} do
-      assert {:ok, piece} =
-               Storybox.Stories.SequencePiece
+  describe "create treatment_view" do
+    test "creates a treatment_view with required fields", %{story: story} do
+      assert {:ok, view} =
+               Storybox.Stories.TreatmentView
                |> Ash.Changeset.for_create(:create, %{
                  title: "Act 1 Intro",
                  position: 1,
@@ -32,15 +32,15 @@ defmodule Storybox.Stories.SequencePieceTest do
                })
                |> Ash.create()
 
-      assert piece.title == "Act 1 Intro"
-      assert piece.position == 1
-      assert piece.story_id == story.id
-      assert is_nil(piece.approved_version_id)
+      assert view.title == "Act 1 Intro"
+      assert view.position == 1
+      assert view.story_id == story.id
+      assert is_nil(view.approved_version_id)
     end
 
-    test "creates a sequence_piece with optional act", %{story: story} do
-      assert {:ok, piece} =
-               Storybox.Stories.SequencePiece
+    test "creates a treatment_view with optional act", %{story: story} do
+      assert {:ok, view} =
+               Storybox.Stories.TreatmentView
                |> Ash.Changeset.for_create(:create, %{
                  title: "Intro",
                  position: 1,
@@ -49,12 +49,12 @@ defmodule Storybox.Stories.SequencePieceTest do
                })
                |> Ash.create()
 
-      assert piece.act == "Act 1"
+      assert view.act == "Act 1"
     end
 
     test "fails without title", %{story: story} do
       assert {:error, %Ash.Error.Invalid{}} =
-               Storybox.Stories.SequencePiece
+               Storybox.Stories.TreatmentView
                |> Ash.Changeset.for_create(:create, %{
                  position: 1,
                  story_id: story.id
@@ -64,7 +64,7 @@ defmodule Storybox.Stories.SequencePieceTest do
 
     test "fails without story_id" do
       assert {:error, %Ash.Error.Invalid{}} =
-               Storybox.Stories.SequencePiece
+               Storybox.Stories.TreatmentView
                |> Ash.Changeset.for_create(:create, %{
                  title: "Test",
                  position: 1
@@ -75,8 +75,8 @@ defmodule Storybox.Stories.SequencePieceTest do
 
   describe "create_version action" do
     test "creates first version with version_number 1", %{story: story} do
-      {:ok, piece} =
-        Storybox.Stories.SequencePiece
+      {:ok, view} =
+        Storybox.Stories.TreatmentView
         |> Ash.Changeset.for_create(:create, %{
           title: "First Act",
           position: 1,
@@ -84,96 +84,96 @@ defmodule Storybox.Stories.SequencePieceTest do
         })
         |> Ash.create()
 
-      assert {:ok, version} =
-               Storybox.Stories.SequencePiece
+      assert {:ok, piece} =
+               Storybox.Stories.TreatmentView
                |> Ash.ActionInput.for_action(:create_version, %{
-                 sequence_piece_id: piece.id,
+                 treatment_view_id: view.id,
                  content: "INT. COFFEE SHOP - DAY"
                })
                |> Ash.run_action()
 
-      assert version.version_number == 1
-      assert version.upstream_status == :current
-      assert version.weights == %{}
-      assert version.sequence_piece_id == piece.id
+      assert piece.version_number == 1
+      assert piece.upstream_status == :current
+      assert piece.weights == %{}
+      assert piece.treatment_view_id == view.id
 
-      assert version.content_uri ==
-               Storybox.Storage.uri_for_sequence(story.id, piece.id, 1)
+      assert piece.content_uri ==
+               Storybox.Storage.uri_for_sequence(story.id, view.id, 1)
     end
 
     test "increments version_number for subsequent versions", %{story: story} do
-      {:ok, piece} =
-        Storybox.Stories.SequencePiece
+      {:ok, view} =
+        Storybox.Stories.TreatmentView
         |> Ash.Changeset.for_create(:create, %{
-          title: "Test Piece",
+          title: "Test View",
           position: 1,
           story_id: story.id
         })
         |> Ash.create()
 
-      {:ok, _version1} =
-        Storybox.Stories.SequencePiece
+      {:ok, _piece1} =
+        Storybox.Stories.TreatmentView
         |> Ash.ActionInput.for_action(:create_version, %{
-          sequence_piece_id: piece.id,
+          treatment_view_id: view.id,
           content: "Version one content"
         })
         |> Ash.run_action()
 
-      assert {:ok, version2} =
-               Storybox.Stories.SequencePiece
+      assert {:ok, piece2} =
+               Storybox.Stories.TreatmentView
                |> Ash.ActionInput.for_action(:create_version, %{
-                 sequence_piece_id: piece.id,
+                 treatment_view_id: view.id,
                  content: "Version two content"
                })
                |> Ash.run_action()
 
-      assert version2.version_number == 2
+      assert piece2.version_number == 2
     end
   end
 
   describe "approve_version action" do
-    test "sets approved_version_id on the piece", %{story: story} do
-      {:ok, piece} =
-        Storybox.Stories.SequencePiece
+    test "sets approved_version_id on the view", %{story: story} do
+      {:ok, view} =
+        Storybox.Stories.TreatmentView
         |> Ash.Changeset.for_create(:create, %{
-          title: "Test Piece",
+          title: "Test View",
           position: 1,
           story_id: story.id
         })
         |> Ash.create()
 
-      {:ok, version} =
-        Storybox.Stories.SequencePiece
+      {:ok, piece} =
+        Storybox.Stories.TreatmentView
         |> Ash.ActionInput.for_action(:create_version, %{
-          sequence_piece_id: piece.id,
+          treatment_view_id: view.id,
           content: "Approved content"
         })
         |> Ash.run_action()
 
-      assert {:ok, updated_piece} =
-               piece
-               |> Ash.Changeset.for_update(:approve_version, %{version_id: version.id})
+      assert {:ok, updated_view} =
+               view
+               |> Ash.Changeset.for_update(:approve_version, %{version_id: piece.id})
                |> Ash.update()
 
-      assert updated_piece.approved_version_id == version.id
+      assert updated_view.approved_version_id == piece.id
     end
   end
 
-  describe "set_weights action on SequenceVersion" do
-    test "sets weights map on a version with empty weights and persists it", %{story: story} do
-      {:ok, piece} =
-        Storybox.Stories.SequencePiece
+  describe "set_weights action on TreatmentPiece" do
+    test "sets weights map on a piece with empty weights and persists it", %{story: story} do
+      {:ok, view} =
+        Storybox.Stories.TreatmentView
         |> Ash.Changeset.for_create(:create, %{
-          title: "Test Piece",
+          title: "Test View",
           position: 1,
           story_id: story.id
         })
         |> Ash.create()
 
-      {:ok, version} =
-        Storybox.Stories.SequenceVersion
+      {:ok, piece} =
+        Storybox.Stories.TreatmentPiece
         |> Ash.Changeset.for_create(:create, %{
-          sequence_piece_id: piece.id,
+          treatment_view_id: view.id,
           content_uri: "storybox://test/v1",
           version_number: 1,
           weights: %{}
@@ -181,34 +181,34 @@ defmodule Storybox.Stories.SequencePieceTest do
         |> Ash.create()
 
       assert {:ok, updated} =
-               version
+               piece
                |> Ash.Changeset.for_update(:set_weights, %{weights: %{"preference" => 0.8}})
                |> Ash.update()
 
       assert updated.weights == %{"preference" => 0.8}
 
       reloaded =
-        Storybox.Stories.SequenceVersion
-        |> Ash.Query.filter(id == ^version.id)
+        Storybox.Stories.TreatmentPiece
+        |> Ash.Query.filter(id == ^piece.id)
         |> Ash.read_one!(authorize?: false)
 
       assert reloaded.weights == %{"preference" => 0.8}
     end
 
     test "replacing weights removes keys not in the new map", %{story: story} do
-      {:ok, piece} =
-        Storybox.Stories.SequencePiece
+      {:ok, view} =
+        Storybox.Stories.TreatmentView
         |> Ash.Changeset.for_create(:create, %{
-          title: "Test Piece",
+          title: "Test View",
           position: 2,
           story_id: story.id
         })
         |> Ash.create()
 
-      {:ok, version} =
-        Storybox.Stories.SequenceVersion
+      {:ok, piece} =
+        Storybox.Stories.TreatmentPiece
         |> Ash.Changeset.for_create(:create, %{
-          sequence_piece_id: piece.id,
+          treatment_view_id: view.id,
           content_uri: "storybox://test/v2",
           version_number: 1,
           weights: %{"preference" => 0.9, "theme" => 0.7}
@@ -216,7 +216,7 @@ defmodule Storybox.Stories.SequencePieceTest do
         |> Ash.create()
 
       assert {:ok, updated} =
-               version
+               piece
                |> Ash.Changeset.for_update(:set_weights, %{weights: %{"preference" => 0.5}})
                |> Ash.update()
 
@@ -226,29 +226,29 @@ defmodule Storybox.Stories.SequencePieceTest do
   end
 
   describe "read" do
-    test "returns all sequence_pieces", %{story: story} do
-      {:ok, piece1} =
-        Storybox.Stories.SequencePiece
+    test "returns all treatment_views", %{story: story} do
+      {:ok, view1} =
+        Storybox.Stories.TreatmentView
         |> Ash.Changeset.for_create(:create, %{
-          title: "Piece 1",
+          title: "View 1",
           position: 1,
           story_id: story.id
         })
         |> Ash.create()
 
-      {:ok, piece2} =
-        Storybox.Stories.SequencePiece
+      {:ok, view2} =
+        Storybox.Stories.TreatmentView
         |> Ash.Changeset.for_create(:create, %{
-          title: "Piece 2",
+          title: "View 2",
           position: 2,
           story_id: story.id
         })
         |> Ash.create()
 
-      assert {:ok, pieces} = Storybox.Stories.SequencePiece |> Ash.read()
-      ids = Enum.map(pieces, & &1.id)
-      assert piece1.id in ids
-      assert piece2.id in ids
+      assert {:ok, views} = Storybox.Stories.TreatmentView |> Ash.read()
+      ids = Enum.map(views, & &1.id)
+      assert view1.id in ids
+      assert view2.id in ids
     end
   end
 end

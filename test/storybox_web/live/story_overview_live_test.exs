@@ -75,7 +75,7 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       |> Ash.create()
 
     {:ok, sv1} =
-      Storybox.Stories.SynopsisVersion
+      Storybox.Stories.SynopsisView
       |> Ash.Changeset.for_create(:create, %{
         story_id: story.id,
         content_uri: "storybox://stories/#{story.id}/synopsis/v1",
@@ -84,7 +84,7 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       |> Ash.create()
 
     {:ok, sv2} =
-      Storybox.Stories.SynopsisVersion
+      Storybox.Stories.SynopsisView
       |> Ash.Changeset.for_create(:create, %{
         story_id: story.id,
         content_uri: "storybox://stories/#{story.id}/synopsis/v2",

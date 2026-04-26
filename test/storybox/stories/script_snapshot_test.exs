@@ -16,8 +16,8 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
       |> Ash.Changeset.for_create(:create, %{title: "Test Story", user_id: user.id})
       |> Ash.create()
 
-    {:ok, sequence} =
-      Storybox.Stories.SequencePiece
+    {:ok, treatment_view} =
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Act 1",
         position: 1,
@@ -25,12 +25,12 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
       })
       |> Ash.create()
 
-    %{story: story, sequence: sequence}
+    %{story: story, treatment_view: treatment_view}
   end
 
   describe "create" do
     test "creates a snapshot with explicit entries", %{story: story} do
-      entries = %{"scene-piece-1" => "scene-version-1"}
+      entries = %{"script-view-1" => "script-piece-1"}
 
       assert {:ok, snapshot} =
                Storybox.Stories.ScriptSnapshot
@@ -93,51 +93,51 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
   end
 
   describe "capture action" do
-    test "captures approved versions for all scene pieces in a story", %{
+    test "captures approved versions for all script views in a story", %{
       story: story,
-      sequence: sequence
+      treatment_view: treatment_view
     } do
-      {:ok, piece1} =
-        Storybox.Stories.ScenePiece
+      {:ok, view1} =
+        Storybox.Stories.ScriptView
         |> Ash.Changeset.for_create(:create, %{
           title: "Scene 1",
           position: 1,
-          sequence_piece_id: sequence.id
+          treatment_view_id: treatment_view.id
         })
         |> Ash.create()
 
-      {:ok, piece2} =
-        Storybox.Stories.ScenePiece
+      {:ok, view2} =
+        Storybox.Stories.ScriptView
         |> Ash.Changeset.for_create(:create, %{
           title: "Scene 2",
           position: 2,
-          sequence_piece_id: sequence.id
+          treatment_view_id: treatment_view.id
         })
         |> Ash.create()
 
       {:ok, version1} =
-        Storybox.Stories.ScenePiece
+        Storybox.Stories.ScriptView
         |> Ash.ActionInput.for_action(:create_version, %{
-          scene_piece_id: piece1.id,
+          script_view_id: view1.id,
           content: "Scene one content"
         })
         |> Ash.run_action()
 
       {:ok, version2} =
-        Storybox.Stories.ScenePiece
+        Storybox.Stories.ScriptView
         |> Ash.ActionInput.for_action(:create_version, %{
-          scene_piece_id: piece2.id,
+          script_view_id: view2.id,
           content: "Scene two content"
         })
         |> Ash.run_action()
 
-      {:ok, piece1} =
-        piece1
+      {:ok, view1} =
+        view1
         |> Ash.Changeset.for_update(:approve_version, %{version_id: version1.id})
         |> Ash.update()
 
-      {:ok, piece2} =
-        piece2
+      {:ok, view2} =
+        view2
         |> Ash.Changeset.for_update(:approve_version, %{version_id: version2.id})
         |> Ash.update()
 
@@ -152,39 +152,42 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
       assert snapshot.name == "Before Workshop"
       assert snapshot.story_id == story.id
 
-      assert snapshot.entries[to_string(piece1.id)] == to_string(piece1.approved_version_id)
-      assert snapshot.entries[to_string(piece2.id)] == to_string(piece2.approved_version_id)
+      assert snapshot.entries[to_string(view1.id)] == to_string(view1.approved_version_id)
+      assert snapshot.entries[to_string(view2.id)] == to_string(view2.approved_version_id)
     end
 
-    test "excludes scene pieces with no approved version", %{story: story, sequence: sequence} do
-      {:ok, piece_approved} =
-        Storybox.Stories.ScenePiece
+    test "excludes script views with no approved version", %{
+      story: story,
+      treatment_view: treatment_view
+    } do
+      {:ok, view_approved} =
+        Storybox.Stories.ScriptView
         |> Ash.Changeset.for_create(:create, %{
           title: "Approved Scene",
           position: 1,
-          sequence_piece_id: sequence.id
+          treatment_view_id: treatment_view.id
         })
         |> Ash.create()
 
-      {:ok, _piece_unapproved} =
-        Storybox.Stories.ScenePiece
+      {:ok, _view_unapproved} =
+        Storybox.Stories.ScriptView
         |> Ash.Changeset.for_create(:create, %{
           title: "Unapproved Scene",
           position: 2,
-          sequence_piece_id: sequence.id
+          treatment_view_id: treatment_view.id
         })
         |> Ash.create()
 
       {:ok, version} =
-        Storybox.Stories.ScenePiece
+        Storybox.Stories.ScriptView
         |> Ash.ActionInput.for_action(:create_version, %{
-          scene_piece_id: piece_approved.id,
+          script_view_id: view_approved.id,
           content: "Approved scene content"
         })
         |> Ash.run_action()
 
-      {:ok, piece_approved} =
-        piece_approved
+      {:ok, view_approved} =
+        view_approved
         |> Ash.Changeset.for_update(:approve_version, %{version_id: version.id})
         |> Ash.update()
 
@@ -198,11 +201,11 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
 
       assert map_size(snapshot.entries) == 1
 
-      assert snapshot.entries[to_string(piece_approved.id)] ==
-               to_string(piece_approved.approved_version_id)
+      assert snapshot.entries[to_string(view_approved.id)] ==
+               to_string(view_approved.approved_version_id)
     end
 
-    test "capture with no scene pieces produces empty entries", %{story: story} do
+    test "capture with no script views produces empty entries", %{story: story} do
       assert {:ok, snapshot} =
                Storybox.Stories.ScriptSnapshot
                |> Ash.ActionInput.for_action(:capture, %{

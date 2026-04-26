@@ -38,19 +38,19 @@ defmodule Storybox.Stories.ScriptSnapshot do
       run fn input, _context ->
         story_id = input.arguments.story_id
 
-        sequence_ids =
-          Storybox.Stories.SequencePiece
+        treatment_view_ids =
+          Storybox.Stories.TreatmentView
           |> Ash.Query.filter(story_id == ^story_id)
           |> Ash.read!(authorize?: false)
           |> Enum.map(& &1.id)
 
         entries =
-          Storybox.Stories.ScenePiece
-          |> Ash.Query.filter(sequence_piece_id in ^sequence_ids)
+          Storybox.Stories.ScriptView
+          |> Ash.Query.filter(treatment_view_id in ^treatment_view_ids)
           |> Ash.read!(authorize?: false)
           |> Enum.reject(&is_nil(&1.approved_version_id))
-          |> Map.new(fn piece ->
-            {to_string(piece.id), to_string(piece.approved_version_id)}
+          |> Map.new(fn view ->
+            {to_string(view.id), to_string(view.approved_version_id)}
           end)
 
         Storybox.Stories.ScriptSnapshot

@@ -3,13 +3,13 @@ defmodule StoryboxWeb.ScriptViewTest do
 
   alias Storybox.Accounts.ApiToken
 
-  # Shared setup creates the following structure (see plan for diagram):
+  # Shared setup creates the following structure:
   #
-  #   story → seq_1 (Act I) → scene_1 → v1 (EXT. PARK...), v2 (INT. OFFICE...) ★ approved
-  #                          → scene_2 → v3 (EXT. STREET...)   no approved version
-  #         → seq_2 (Act II) → scene_3 → v4 (INT. KITCHEN...) ★ approved
-  #                           → scene_4   (no versions)
-  #   snapshot: entries = {scene_1 → v1}  (pins scene_1 to old v1; others not listed)
+  #   story → tv_1 (Act I) → sv_1 → sp_v1 (EXT. PARK...), sp_v2 (INT. OFFICE...) ★ approved
+  #                         → sv_2 → sp_v3 (EXT. STREET...)   no approved version
+  #         → tv_2 (Act II) → sv_3 → sp_v4 (INT. KITCHEN...) ★ approved
+  #                          → sv_4   (no versions)
+  #   snapshot: entries = {sv_1 → sp_v1}  (pins sv_1 to old v1; others not listed)
   #   other_story: for token isolation tests
 
   setup do
@@ -38,8 +38,8 @@ defmodule StoryboxWeb.ScriptViewTest do
 
     {:ok, raw_token, _} = ApiToken.generate(%{story_id: story.id, user_id: user.id})
 
-    {:ok, seq_1} =
-      Storybox.Stories.SequencePiece
+    {:ok, tv_1} =
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Opening",
         act: "Act I",
@@ -48,8 +48,8 @@ defmodule StoryboxWeb.ScriptViewTest do
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, seq_2} =
-      Storybox.Stories.SequencePiece
+    {:ok, tv_2} =
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Confrontation",
         act: "Act II",
@@ -58,91 +58,91 @@ defmodule StoryboxWeb.ScriptViewTest do
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, scene_1} =
-      Storybox.Stories.ScenePiece
+    {:ok, sv_1} =
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Cold open",
         position: 1,
-        sequence_piece_id: seq_1.id
+        treatment_view_id: tv_1.id
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, scene_2} =
-      Storybox.Stories.ScenePiece
+    {:ok, sv_2} =
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Inciting incident",
         position: 2,
-        sequence_piece_id: seq_1.id
+        treatment_view_id: tv_1.id
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, scene_3} =
-      Storybox.Stories.ScenePiece
+    {:ok, sv_3} =
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "The argument",
         position: 1,
-        sequence_piece_id: seq_2.id
+        treatment_view_id: tv_2.id
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, scene_4} =
-      Storybox.Stories.ScenePiece
+    {:ok, sv_4} =
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Aftermath",
         position: 2,
-        sequence_piece_id: seq_2.id
+        treatment_view_id: tv_2.id
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, v1} =
-      Storybox.Stories.ScenePiece
+    {:ok, sp_v1} =
+      Storybox.Stories.ScriptView
       |> Ash.ActionInput.for_action(:create_version, %{
-        scene_piece_id: scene_1.id,
+        script_view_id: sv_1.id,
         content: "EXT. PARK - DAY\n\nFirst draft."
       })
       |> Ash.run_action(authorize?: false)
 
-    {:ok, v2} =
-      Storybox.Stories.ScenePiece
+    {:ok, sp_v2} =
+      Storybox.Stories.ScriptView
       |> Ash.ActionInput.for_action(:create_version, %{
-        scene_piece_id: scene_1.id,
+        script_view_id: sv_1.id,
         content: "INT. OFFICE - NIGHT\n\nRevised."
       })
       |> Ash.run_action(authorize?: false)
 
-    {:ok, scene_1} =
-      scene_1
-      |> Ash.Changeset.for_update(:approve_version, %{version_id: v2.id})
+    {:ok, sv_1} =
+      sv_1
+      |> Ash.Changeset.for_update(:approve_version, %{version_id: sp_v2.id})
       |> Ash.update(authorize?: false)
 
-    {:ok, v3} =
-      Storybox.Stories.ScenePiece
+    {:ok, sp_v3} =
+      Storybox.Stories.ScriptView
       |> Ash.ActionInput.for_action(:create_version, %{
-        scene_piece_id: scene_2.id,
+        script_view_id: sv_2.id,
         content: "EXT. STREET - DAY\n\nSomething happens."
       })
       |> Ash.run_action(authorize?: false)
 
-    {:ok, v4} =
-      Storybox.Stories.ScenePiece
+    {:ok, sp_v4} =
+      Storybox.Stories.ScriptView
       |> Ash.ActionInput.for_action(:create_version, %{
-        scene_piece_id: scene_3.id,
+        script_view_id: sv_3.id,
         content: "INT. KITCHEN - DAY\n\nThey argue."
       })
       |> Ash.run_action(authorize?: false)
 
-    {:ok, scene_3} =
-      scene_3
-      |> Ash.Changeset.for_update(:approve_version, %{version_id: v4.id})
+    {:ok, sv_3} =
+      sv_3
+      |> Ash.Changeset.for_update(:approve_version, %{version_id: sp_v4.id})
       |> Ash.update(authorize?: false)
 
-    # Snapshot pins scene_1 to v1 (its old version, not the currently approved v2)
+    # Snapshot pins sv_1 to sp_v1 (its old version, not the currently approved sp_v2)
     {:ok, snapshot} =
       Storybox.Stories.ScriptSnapshot
       |> Ash.Changeset.for_create(:create, %{
         name: "Test snapshot",
         story_id: story.id,
-        entries: %{to_string(scene_1.id) => to_string(v1.id)}
+        entries: %{to_string(sv_1.id) => to_string(sp_v1.id)}
       })
       |> Ash.create(authorize?: false)
 
@@ -150,16 +150,16 @@ defmodule StoryboxWeb.ScriptViewTest do
       story: story,
       other_story: other_story,
       raw_token: raw_token,
-      seq_1: seq_1,
-      seq_2: seq_2,
-      scene_1: scene_1,
-      scene_2: scene_2,
-      scene_3: scene_3,
-      scene_4: scene_4,
-      v1: v1,
-      v2: v2,
-      v3: v3,
-      v4: v4,
+      tv_1: tv_1,
+      tv_2: tv_2,
+      sv_1: sv_1,
+      sv_2: sv_2,
+      sv_3: sv_3,
+      sv_4: sv_4,
+      sp_v1: sp_v1,
+      sp_v2: sp_v2,
+      sp_v3: sp_v3,
+      sp_v4: sp_v4,
       snapshot: snapshot
     }
   end
@@ -218,13 +218,13 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn: conn,
       story: story,
       raw_token: raw_token,
-      scene_4: scene_4
+      sv_4: sv_4
     } do
       conn = get_script(conn, story, raw_token, %{mode: "latest"})
       confrontation = find_sequence(json_response(conn, 200), "Confrontation")
       aftermath = find_scene(confrontation, "Aftermath")
 
-      assert aftermath["id"] == scene_4.id
+      assert aftermath["id"] == sv_4.id
       assert aftermath["version"] == nil
       assert aftermath["content"] == nil
     end
@@ -271,7 +271,7 @@ defmodule StoryboxWeb.ScriptViewTest do
   # ── mode=snapshot ────────────────────────────────────────────────────────────
 
   describe "GET /api/stories/:story_id/views/script?mode=snapshot" do
-    test "resolves scene_1 to v1 via the snapshot entries map, not the current approved v2", %{
+    test "resolves sv_1 to sp_v1 via the snapshot entries map, not the current approved sp_v2", %{
       conn: conn,
       story: story,
       raw_token: raw_token,
@@ -296,7 +296,7 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn = get_script(conn, story, raw_token, %{mode: "snapshot", snapshot_id: snapshot.id})
       body = json_response(conn, 200)
 
-      # scene_2, scene_3, scene_4 are not in the snapshot
+      # sv_2, sv_3, sv_4 are not in the snapshot
       inciting = body |> find_sequence("Opening") |> find_scene("Inciting incident")
       assert inciting["version"] == nil
       assert inciting["content"] == nil
@@ -375,21 +375,21 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn: conn,
       story: story,
       raw_token: raw_token,
-      scene_1: scene_1
+      sv_1: sv_1
     } do
       {:ok, bad_version} =
-        Storybox.Stories.SceneVersion
+        Storybox.Stories.ScriptPiece
         |> Ash.Changeset.for_create(:create, %{
-          scene_piece_id: scene_1.id,
+          script_view_id: sv_1.id,
           content_uri:
-            "storybox://stories/#{story.id}/scenes/#{scene_1.id}/v999_nonexistent.fountain",
+            "storybox://stories/#{story.id}/scenes/#{sv_1.id}/v999_nonexistent.fountain",
           version_number: 99,
           upstream_status: :current,
           weights: %{}
         })
         |> Ash.create(authorize?: false)
 
-      scene_1
+      sv_1
       |> Ash.Changeset.for_update(:approve_version, %{version_id: bad_version.id})
       |> Ash.update(authorize?: false)
 

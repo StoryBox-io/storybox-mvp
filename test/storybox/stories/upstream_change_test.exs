@@ -16,8 +16,8 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       |> Ash.Changeset.for_create(:create, %{title: "Test Story", user_id: user.id})
       |> Ash.create()
 
-    {:ok, sequence} =
-      Storybox.Stories.SequencePiece
+    {:ok, treatment_view} =
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Act 1",
         position: 1,
@@ -25,50 +25,50 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       })
       |> Ash.create()
 
-    {:ok, sequence_version} =
-      Storybox.Stories.SequenceVersion
+    {:ok, treatment_piece} =
+      Storybox.Stories.TreatmentPiece
       |> Ash.Changeset.for_create(:create, %{
-        sequence_piece_id: sequence.id,
-        content_uri: "storybox://stories/#{story.id}/sequences/#{sequence.id}/v1",
+        treatment_view_id: treatment_view.id,
+        content_uri: "storybox://stories/#{story.id}/sequences/#{treatment_view.id}/v1",
         version_number: 1
       })
       |> Ash.create()
 
-    {:ok, scene} =
-      Storybox.Stories.ScenePiece
+    {:ok, script_view} =
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Scene 1",
         position: 1,
-        sequence_piece_id: sequence.id
+        treatment_view_id: treatment_view.id
       })
       |> Ash.create()
 
-    {:ok, scene_version} =
-      Storybox.Stories.SceneVersion
+    {:ok, script_piece} =
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        scene_piece_id: scene.id,
-        content_uri: "storybox://stories/#{story.id}/scenes/#{scene.id}/v1",
+        script_view_id: script_view.id,
+        content_uri: "storybox://stories/#{story.id}/scenes/#{script_view.id}/v1",
         version_number: 1
       })
       |> Ash.create()
 
     %{
       story: story,
-      sequence_version: sequence_version,
-      scene_version: scene_version
+      treatment_piece: treatment_piece,
+      script_piece: script_piece
     }
   end
 
   describe "create" do
-    test "creates an UpstreamChange for a sequence_version target", %{
+    test "creates an UpstreamChange for a treatment_piece target", %{
       story: story,
-      sequence_version: sequence_version
+      treatment_piece: treatment_piece
     } do
       assert {:ok, change} =
                Storybox.Stories.UpstreamChange
                |> Ash.Changeset.for_create(:create, %{
-                 piece_version_type: :sequence_version,
-                 piece_version_id: sequence_version.id,
+                 piece_version_type: :treatment_piece,
+                 piece_version_id: treatment_piece.id,
                  component_type: :story,
                  component_id: story.id,
                  version_before: "2026-01-01T00:00:00Z",
@@ -76,8 +76,8 @@ defmodule Storybox.Stories.UpstreamChangeTest do
                })
                |> Ash.create()
 
-      assert change.piece_version_type == :sequence_version
-      assert change.piece_version_id == sequence_version.id
+      assert change.piece_version_type == :treatment_piece
+      assert change.piece_version_id == treatment_piece.id
       assert change.component_type == :story
       assert change.component_id == story.id
       assert change.version_before == "2026-01-01T00:00:00Z"
@@ -85,33 +85,33 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       assert change.acknowledged == false
     end
 
-    test "creates an UpstreamChange for a scene_version target", %{
+    test "creates an UpstreamChange for a script_piece target", %{
       story: story,
-      scene_version: scene_version
+      script_piece: script_piece
     } do
       assert {:ok, change} =
                Storybox.Stories.UpstreamChange
                |> Ash.Changeset.for_create(:create, %{
-                 piece_version_type: :scene_version,
-                 piece_version_id: scene_version.id,
+                 piece_version_type: :script_piece,
+                 piece_version_id: script_piece.id,
                  component_type: :character,
                  component_id: story.id
                })
                |> Ash.create()
 
-      assert change.piece_version_type == :scene_version
+      assert change.piece_version_type == :script_piece
       assert change.component_type == :character
       assert change.acknowledged == false
       assert is_nil(change.version_before)
       assert is_nil(change.version_after)
     end
 
-    test "defaults acknowledged to false", %{story: story, scene_version: scene_version} do
+    test "defaults acknowledged to false", %{story: story, script_piece: script_piece} do
       assert {:ok, change} =
                Storybox.Stories.UpstreamChange
                |> Ash.Changeset.for_create(:create, %{
-                 piece_version_type: :scene_version,
-                 piece_version_id: scene_version.id,
+                 piece_version_type: :script_piece,
+                 piece_version_id: script_piece.id,
                  component_type: :world,
                  component_id: story.id
                })
@@ -120,24 +120,24 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       assert change.acknowledged == false
     end
 
-    test "fails with invalid piece_version_type", %{story: story, scene_version: scene_version} do
+    test "fails with invalid piece_version_type", %{story: story, script_piece: script_piece} do
       assert {:error, %Ash.Error.Invalid{}} =
                Storybox.Stories.UpstreamChange
                |> Ash.Changeset.for_create(:create, %{
                  piece_version_type: :bad_type,
-                 piece_version_id: scene_version.id,
+                 piece_version_id: script_piece.id,
                  component_type: :story,
                  component_id: story.id
                })
                |> Ash.create()
     end
 
-    test "fails with invalid component_type", %{story: story, scene_version: scene_version} do
+    test "fails with invalid component_type", %{story: story, script_piece: script_piece} do
       assert {:error, %Ash.Error.Invalid{}} =
                Storybox.Stories.UpstreamChange
                |> Ash.Changeset.for_create(:create, %{
-                 piece_version_type: :scene_version,
-                 piece_version_id: scene_version.id,
+                 piece_version_type: :script_piece,
+                 piece_version_id: script_piece.id,
                  component_type: :invalid,
                  component_id: story.id
                })
@@ -153,12 +153,12 @@ defmodule Storybox.Stories.UpstreamChangeTest do
   end
 
   describe "acknowledge" do
-    test "sets acknowledged to true", %{story: story, scene_version: scene_version} do
+    test "sets acknowledged to true", %{story: story, script_piece: script_piece} do
       {:ok, change} =
         Storybox.Stories.UpstreamChange
         |> Ash.Changeset.for_create(:create, %{
-          piece_version_type: :scene_version,
-          piece_version_id: scene_version.id,
+          piece_version_type: :script_piece,
+          piece_version_id: script_piece.id,
           component_type: :story,
           component_id: story.id
         })
@@ -174,12 +174,12 @@ defmodule Storybox.Stories.UpstreamChangeTest do
   end
 
   describe "read" do
-    test "filters by component_type", %{story: story, scene_version: scene_version} do
+    test "filters by component_type", %{story: story, script_piece: script_piece} do
       {:ok, _} =
         Storybox.Stories.UpstreamChange
         |> Ash.Changeset.for_create(:create, %{
-          piece_version_type: :scene_version,
-          piece_version_id: scene_version.id,
+          piece_version_type: :script_piece,
+          piece_version_id: script_piece.id,
           component_type: :story,
           component_id: story.id
         })
@@ -188,8 +188,8 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       {:ok, _} =
         Storybox.Stories.UpstreamChange
         |> Ash.Changeset.for_create(:create, %{
-          piece_version_type: :scene_version,
-          piece_version_id: scene_version.id,
+          piece_version_type: :script_piece,
+          piece_version_id: script_piece.id,
           component_type: :character,
           component_id: story.id
         })
