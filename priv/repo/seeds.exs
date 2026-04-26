@@ -349,7 +349,7 @@ if little_witch = all_stories["Little Witch"] do
     IO.puts("  Created 7 treatment views for Little Witch (reckoning has v1 approved + v2 stale)")
   end
 
-  # -- Scene pieces (ScriptViews) + versions (ScriptPieces) ------------------
+  # -- Scene entities + ScriptViews + ScriptPieces ----------------------------
   # Scenes are seeded under two sequences: Summoning (3 scenes) and Reckoning (2 scenes).
   # The final Reckoning scene has no version — demonstrates unresolvable view → Task.
 
@@ -363,14 +363,62 @@ if little_witch = all_stories["Little Witch"] do
     |> Ash.Query.filter(story_id == ^little_witch.id and title == "Reckoning — Kestrel's Choice")
     |> Ash.read_one!(authorize?: false)
 
-  if summoning do
-    existing_summoning_scenes =
+  seed_scene = fn story_id, treatment_view_id, position, title, content ->
+    {:ok, scene} =
+      Storybox.Stories.Scene
+      |> Ash.Changeset.for_create(:create, %{
+        title: title,
+        story_id: story_id
+      })
+      |> Ash.create(authorize?: false)
+
+    Storybox.Stories.TreatmentViewScene
+    |> Ash.Changeset.for_create(:create, %{
+      treatment_view_id: treatment_view_id,
+      scene_id: scene.id,
+      position: position
+    })
+    |> Ash.create!(authorize?: false)
+
+    {:ok, script_view} =
       Storybox.Stories.ScriptView
+      |> Ash.Changeset.for_create(:create, %{
+        title: title,
+        scene_id: scene.id
+      })
+      |> Ash.create(authorize?: false)
+
+    if content do
+      uri = Storybox.Storage.uri_for_scene(story_id, script_view.id, 1)
+      Storybox.Storage.put_content(uri, String.trim(content))
+
+      {:ok, v1} =
+        Storybox.Stories.ScriptPiece
+        |> Ash.Changeset.for_create(:create, %{
+          script_view_id: script_view.id,
+          content_uri: uri,
+          version_number: 1,
+          upstream_status: :current,
+          weights: %{"preference" => 0.9, "theme" => 0.8}
+        })
+        |> Ash.create(authorize?: false)
+
+      script_view
+      |> Ash.Changeset.for_update(:approve_version, %{version_id: v1.id})
+      |> Ash.update!(authorize?: false)
+    end
+
+    scene
+  end
+
+  if summoning do
+    existing_summoning_tvscenes =
+      Storybox.Stories.TreatmentViewScene
       |> Ash.Query.filter(treatment_view_id == ^summoning.id)
       |> Ash.read!(authorize?: false)
       |> length()
 
-    if existing_summoning_scenes == 0 do
+    if existing_summoning_tvscenes == 0 do
       summoning_scenes = [
         {1, "INT. COTTAGE - NIGHT",
          """
@@ -453,117 +501,115 @@ if little_witch = all_stories["Little Witch"] do
       ]
 
       for {position, title, content} <- summoning_scenes do
-        {:ok, scene} =
-          Storybox.Stories.ScriptView
-          |> Ash.Changeset.for_create(:create, %{
-            title: title,
-            position: position,
-            treatment_view_id: summoning.id
-          })
-          |> Ash.create(authorize?: false)
-
-        uri = Storybox.Storage.uri_for_scene(little_witch.id, scene.id, 1)
-        Storybox.Storage.put_content(uri, String.trim(content))
-
-        {:ok, v1} =
-          Storybox.Stories.ScriptPiece
-          |> Ash.Changeset.for_create(:create, %{
-            script_view_id: scene.id,
-            content_uri: uri,
-            version_number: 1,
-            upstream_status: :current,
-            weights: %{"preference" => 0.9, "theme" => 0.8}
-          })
-          |> Ash.create(authorize?: false)
-
-        scene
-        |> Ash.Changeset.for_update(:approve_version, %{version_id: v1.id})
-        |> Ash.update!(authorize?: false)
+        seed_scene.(little_witch.id, summoning.id, position, title, content)
       end
 
-      IO.puts("  Created 3 script views for The Summoning (all approved)")
+      # Add a v2 to the first Summoning scene so the Compare page has something to show.
+      # v1 stays approved; v2 is unapproved so Approve can be exercised.
+      first_scene_view =
+        Storybox.Stories.ScriptView
+        |> Ash.Query.filter(title == "INT. COTTAGE - NIGHT")
+        |> Ash.read_one!(authorize?: false)
+
+      v2_uri = Storybox.Storage.uri_for_scene(little_witch.id, first_scene_view.id, 2)
+
+      Storybox.Storage.put_content(v2_uri, """
+      INT. COTTAGE - NIGHT
+
+      The cottage is dark. FLEUR stands at the chest, key in hand. She has not moved in an hour.
+
+      The hearth fire watches her. She knows it is watching.
+
+      FLEUR
+      (quietly, not to herself)
+      I know you're there.
+
+      The fire shifts. Not a flare — a lean.
+
+      She turns the key. Lifts the BOOK OF DEMONS out of the chest. It is heavier than she remembers.
+
+      She does not open it yet. She sets it on the table and looks at it.
+
+      FLEUR (CONT'D)
+      Silas said never. She didn't say why.
+
+      A long beat. The fire leans further.
+
+      Fleur opens the cover.
+      """)
+
+      {:ok, _v2} =
+        Storybox.Stories.ScriptPiece
+        |> Ash.Changeset.for_create(:create, %{
+          script_view_id: first_scene_view.id,
+          content_uri: v2_uri,
+          version_number: 2,
+          upstream_status: :current,
+          weights: %{}
+        })
+        |> Ash.create(authorize?: false)
+
+      IO.puts("  Created 3 scenes for The Summoning (cottage scene has v1 approved + v2 draft)")
     end
   end
 
   if reckoning do
-    existing_reckoning_scenes =
-      Storybox.Stories.ScriptView
+    existing_reckoning_tvscenes =
+      Storybox.Stories.TreatmentViewScene
       |> Ash.Query.filter(treatment_view_id == ^reckoning.id)
       |> Ash.read!(authorize?: false)
       |> length()
 
-    if existing_reckoning_scenes == 0 do
-      # Scene 1 — coronation fire (has approved script)
-      {:ok, scene_coronation} =
-        Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "EXT. CORONATION SQUARE - NIGHT",
-          position: 1,
-          treatment_view_id: reckoning.id
-        })
-        |> Ash.create(authorize?: false)
+    if existing_reckoning_tvscenes == 0 do
+      seed_scene.(
+        little_witch.id,
+        reckoning.id,
+        1,
+        "EXT. CORONATION SQUARE - NIGHT",
+        """
+        EXT. CORONATION SQUARE - NIGHT
 
-      coronation_uri = Storybox.Storage.uri_for_scene(little_witch.id, scene_coronation.id, 1)
+        The city is burning. Crowds flee in every direction. The Alderman's ceremony has dissolved into ash and screaming.
 
-      Storybox.Storage.put_content(coronation_uri, """
-      EXT. CORONATION SQUARE - NIGHT
+        The FLAME DEMON is loose in the fire — visible as something that moves against the wind, that chooses where it burns.
 
-      The city is burning. Crowds flee in every direction. The Alderman's ceremony has dissolved into ash and screaming.
+        FLEUR stands at the edge of the square. The lantern is empty.
 
-      The FLAME DEMON is loose in the fire — visible as something that moves against the wind, that chooses where it burns.
+        She has nothing.
 
-      FLEUR stands at the edge of the square. The lantern is empty.
+        She walks toward the flames.
 
-      She has nothing.
+        She pulls a WOMAN from a burning doorway.
 
-      She walks toward the flames.
+        She runs back out.
 
-      She pulls a WOMAN from a burning doorway.
+        She goes again.
 
-      She runs back out.
+        KESTREL watches from across the square. Still. Reading.
 
-      She goes again.
+        Fleur's sleeve catches. She beats it out without stopping. Pulls a CHILD from beneath a fallen beam. Carries him.
 
-      KESTREL watches from across the square. Still. Reading.
+        She goes back.
 
-      Fleur's sleeve catches. She beats it out without stopping. Pulls a CHILD from beneath a fallen beam. Carries him.
+        Her face is wrong — one side of it, from the heat. She does not stop.
 
-      She goes back.
+        Kestrel watches.
 
-      Her face is wrong — one side of it, from the heat. She does not stop.
-
-      Kestrel watches.
-
-      The calculation breaks.
-      """)
-
-      {:ok, coronation_v1} =
-        Storybox.Stories.ScriptPiece
-        |> Ash.Changeset.for_create(:create, %{
-          script_view_id: scene_coronation.id,
-          content_uri: coronation_uri,
-          version_number: 1,
-          upstream_status: :current,
-          weights: %{"preference" => 0.9, "theme" => 1.0}
-        })
-        |> Ash.create(authorize?: false)
-
-      scene_coronation
-      |> Ash.Changeset.for_update(:approve_version, %{version_id: coronation_v1.id})
-      |> Ash.update!(authorize?: false)
+        The calculation breaks.
+        """
+      )
 
       # Scene 2 — Kestrel's choice (NO script version — unresolvable → Task)
-      {:ok, _scene_kestrel} =
-        Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "EXT. RUINS — KESTREL'S CHOICE",
-          position: 2,
-          treatment_view_id: reckoning.id
-        })
-        |> Ash.create(authorize?: false)
+      seed_scene.(
+        little_witch.id,
+        reckoning.id,
+        2,
+        "EXT. RUINS — KESTREL'S CHOICE",
+        nil
+      )
 
       IO.puts(
-        "  Created 2 script views for Reckoning (1 approved, 1 empty — unresolvable → Task)"
+        "  Created 2 scenes for Reckoning (1 with approved script, 1 empty — unresolvable → Task)"
       )
     end
   end

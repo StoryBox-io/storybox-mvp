@@ -5,10 +5,12 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
 
   alias Storybox.Stories.{
     Character,
+    Scene,
     ScriptPiece,
     ScriptView,
     TreatmentPiece,
     TreatmentView,
+    TreatmentViewScene,
     Story,
     UpstreamChange,
     World
@@ -53,13 +55,23 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
       })
       |> Ash.create()
 
+    {:ok, scene} =
+      Scene
+      |> Ash.Changeset.for_create(:create, %{title: "Scene 1", story_id: story.id})
+      |> Ash.create()
+
+    {:ok, _tvs} =
+      TreatmentViewScene
+      |> Ash.Changeset.for_create(:create, %{
+        treatment_view_id: treatment_view.id,
+        scene_id: scene.id,
+        position: 1
+      })
+      |> Ash.create()
+
     {:ok, script_view} =
       ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Scene 1",
-        position: 1,
-        treatment_view_id: treatment_view.id
-      })
+      |> Ash.Changeset.for_create(:create, %{title: "Scene 1", scene_id: scene.id})
       |> Ash.create()
 
     {:ok, script_piece} =

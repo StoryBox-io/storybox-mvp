@@ -159,13 +159,13 @@ defmodule StoryboxWeb.ScriptLive do
           <p class="text-base-content/60 text-sm">No scenes yet.</p>
         <% else %>
           <div class="space-y-4">
-            <%= for {script_view, pieces} <- @scenes do %>
+            <%= for {position, script_view, pieces} <- @scenes do %>
               <% visible = visible_pieces(script_view, pieces, @mode) %>
               <div class="card bg-base-200 shadow-sm">
                 <div class="card-body py-4 space-y-3">
                   <div class="flex items-center gap-2">
                     <span class="badge badge-outline badge-sm font-mono">
-                      #{script_view.position}
+                      #{position}
                     </span>
                     <h3 class="font-semibold">{script_view.title}</h3>
                     <%= if length(pieces) > 1 do %>
@@ -302,35 +302,55 @@ defmodule StoryboxWeb.ScriptLive do
   end
 
   defp load_scenes(treatment_view) do
-    script_views =
-      Storybox.Stories.ScriptView
+    tvscenes =
+      Storybox.Stories.TreatmentViewScene
       |> Ash.Query.filter(treatment_view_id == ^treatment_view.id)
       |> Ash.Query.sort(position: :asc)
       |> Ash.read!(authorize?: false)
 
-    view_ids = Enum.map(script_views, & &1.id)
+    scene_ids = Enum.map(tvscenes, & &1.scene_id)
 
-    pieces_by_view =
-      case view_ids do
-        [] ->
-          %{}
+    case scene_ids do
+      [] ->
+        []
 
-        ids ->
-          Storybox.Stories.ScriptPiece
-          |> Ash.Query.filter(script_view_id in ^ids)
-          |> Ash.Query.sort(version_number: :desc)
+      ids ->
+        script_views =
+          Storybox.Stories.ScriptView
+          |> Ash.Query.filter(scene_id in ^ids)
           |> Ash.read!(authorize?: false)
-          |> Enum.group_by(& &1.script_view_id)
-      end
 
-    Enum.map(script_views, fn sv ->
-      {sv, Map.get(pieces_by_view, sv.id, [])}
-    end)
+        script_views_by_scene = Map.new(script_views, &{&1.scene_id, &1})
+        view_ids = Enum.map(script_views, & &1.id)
+
+        pieces_by_view =
+          case view_ids do
+            [] ->
+              %{}
+
+            vids ->
+              Storybox.Stories.ScriptPiece
+              |> Ash.Query.filter(script_view_id in ^vids)
+              |> Ash.Query.sort(version_number: :desc)
+              |> Ash.read!(authorize?: false)
+              |> Enum.group_by(& &1.script_view_id)
+          end
+
+        tvscenes
+        |> Enum.flat_map(fn tvs ->
+          case script_views_by_scene[tvs.scene_id] do
+            nil -> []
+            sv -> [{tvs.position, sv, Map.get(pieces_by_view, sv.id, [])}]
+          end
+        end)
+    end
   end
 
   defp fetch_visible_content(scenes, mode) do
     scenes
-    |> Enum.flat_map(fn {script_view, pieces} -> visible_pieces(script_view, pieces, mode) end)
+    |> Enum.flat_map(fn {_position, script_view, pieces} ->
+      visible_pieces(script_view, pieces, mode)
+    end)
     |> Enum.map(fn piece ->
       content =
         case Storybox.Storage.get_content(piece.content_uri) do

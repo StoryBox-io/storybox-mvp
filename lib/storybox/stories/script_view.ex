@@ -14,14 +14,13 @@ defmodule Storybox.Stories.ScriptView do
     uuid_primary_key :id
 
     attribute :title, :string, allow_nil?: false, public?: true
-    attribute :position, :integer, allow_nil?: false, public?: true
     attribute :approved_version_id, :uuid, allow_nil?: true, public?: true
 
     timestamps()
   end
 
   relationships do
-    belongs_to :treatment_view, Storybox.Stories.TreatmentView, allow_nil?: false, public?: true
+    belongs_to :scene, Storybox.Stories.Scene, allow_nil?: false, public?: true
     has_many :script_pieces, Storybox.Stories.ScriptPiece, public?: true
   end
 
@@ -29,11 +28,11 @@ defmodule Storybox.Stories.ScriptView do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:title, :position, :treatment_view_id]
+      accept [:title, :scene_id]
     end
 
     update :update do
-      accept [:title, :position]
+      accept [:title]
     end
 
     update :approve_version do
@@ -54,9 +53,9 @@ defmodule Storybox.Stories.ScriptView do
           |> Ash.Query.filter(id == ^view_id)
           |> Ash.read!(authorize?: false)
 
-        [treatment_view] =
-          Storybox.Stories.TreatmentView
-          |> Ash.Query.filter(id == ^view.treatment_view_id)
+        [scene] =
+          Storybox.Stories.Scene
+          |> Ash.Query.filter(id == ^view.scene_id)
           |> Ash.read!(authorize?: false)
 
         existing_pieces =
@@ -70,8 +69,7 @@ defmodule Storybox.Stories.ScriptView do
           |> Enum.max(fn -> 0 end)
           |> Kernel.+(1)
 
-        uri =
-          Storybox.Storage.uri_for_scene(treatment_view.story_id, view_id, next_version_number)
+        uri = Storybox.Storage.uri_for_scene(scene.story_id, view_id, next_version_number)
 
         with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content) do
           Storybox.Stories.ScriptPiece

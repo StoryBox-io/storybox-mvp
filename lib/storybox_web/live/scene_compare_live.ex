@@ -36,12 +36,30 @@ defmodule StoryboxWeb.SceneCompareLive do
                  |> redirect(to: ~p"/")}
 
               script_view ->
-                treatment_view =
-                  Storybox.Stories.TreatmentView
-                  |> Ash.Query.filter(
-                    id == ^script_view.treatment_view_id and story_id == ^story.id
-                  )
+                scene =
+                  Storybox.Stories.Scene
+                  |> Ash.Query.filter(id == ^script_view.scene_id and story_id == ^story.id)
                   |> Ash.read_one!(authorize?: false)
+
+                treatment_view =
+                  case scene do
+                    nil ->
+                      nil
+
+                    s ->
+                      tvscene =
+                        Storybox.Stories.TreatmentViewScene
+                        |> Ash.Query.filter(scene_id == ^s.id)
+                        |> Ash.read_one!(authorize?: false)
+
+                      if tvscene do
+                        Storybox.Stories.TreatmentView
+                        |> Ash.Query.filter(
+                          id == ^tvscene.treatment_view_id and story_id == ^story.id
+                        )
+                        |> Ash.read_one!(authorize?: false)
+                      end
+                  end
 
                 case treatment_view do
                   nil ->

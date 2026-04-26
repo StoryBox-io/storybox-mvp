@@ -225,6 +225,39 @@ defmodule Storybox.Stories.TreatmentViewTest do
     end
   end
 
+  describe "scenes relationship" do
+    test "links scenes via TreatmentViewScene", %{story: story} do
+      {:ok, view} =
+        Storybox.Stories.TreatmentView
+        |> Ash.Changeset.for_create(:create, %{title: "Act 1", position: 1, story_id: story.id})
+        |> Ash.create()
+
+      {:ok, scene} =
+        Storybox.Stories.Scene
+        |> Ash.Changeset.for_create(:create, %{title: "Scene A", story_id: story.id})
+        |> Ash.create()
+
+      {:ok, _tvs} =
+        Storybox.Stories.TreatmentViewScene
+        |> Ash.Changeset.for_create(:create, %{
+          treatment_view_id: view.id,
+          scene_id: scene.id,
+          position: 1
+        })
+        |> Ash.create()
+
+      require Ash.Query
+
+      tvs_list =
+        Storybox.Stories.TreatmentViewScene
+        |> Ash.Query.filter(treatment_view_id == ^view.id)
+        |> Ash.read!(authorize?: false)
+
+      assert length(tvs_list) == 1
+      assert hd(tvs_list).scene_id == scene.id
+    end
+  end
+
   describe "read" do
     test "returns all treatment_views", %{story: story} do
       {:ok, view1} =

@@ -24,6 +24,10 @@ defmodule Storybox.Stories.TreatmentView do
   relationships do
     belongs_to :story, Storybox.Stories.Story, allow_nil?: false, public?: true
     has_many :treatment_pieces, Storybox.Stories.TreatmentPiece, public?: true
+
+    many_to_many :scenes, Storybox.Stories.Scene,
+      through: Storybox.Stories.TreatmentViewScene,
+      public?: true
   end
 
   actions do
