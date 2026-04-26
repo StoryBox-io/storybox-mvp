@@ -7,6 +7,7 @@ defmodule Storybox.Stories.Notifiers.PropagateUpstreamChange do
     ScriptView,
     ScriptPiece,
     TreatmentView,
+    TreatmentViewScene,
     TreatmentPiece,
     UpstreamChange
   }
@@ -63,10 +64,22 @@ defmodule Storybox.Stories.Notifiers.PropagateUpstreamChange do
         |> Ash.create!()
       end
 
-      script_views =
-        ScriptView
+      scene_ids =
+        TreatmentViewScene
         |> Ash.Query.filter(treatment_view_id == ^tv.id)
         |> Ash.read!()
+        |> Enum.map(& &1.scene_id)
+
+      script_views =
+        case scene_ids do
+          [] ->
+            []
+
+          ids ->
+            ScriptView
+            |> Ash.Query.filter(scene_id in ^ids)
+            |> Ash.read!()
+        end
 
       for script_view <- script_views do
         script_pieces =

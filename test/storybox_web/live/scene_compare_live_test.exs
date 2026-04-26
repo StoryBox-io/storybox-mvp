@@ -8,13 +8,13 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
   # Seed data graph:
   #
   #   alice ──► "Compare Test Story" (through_lines: ["theme_a","theme_b"])
-  #               └── seq  "Seq One"
-  #                     ├── Scene Alpha  approved → SV1
+  #               └── TreatmentView "Seq One"
+  #                     ├── Scene "Alpha" → ScriptView "Scene Alpha"  approved → SV1
   #                     │     ├── SV1  v1  weights: {theme_a→0.8, theme_b→0.6}  status: current  [approved]
   #                     │     └── SV2  v2  weights: {}                           status: stale
-  #                     ├── Scene Beta   approved → nil
+  #                     ├── Scene "Beta"  → ScriptView "Scene Beta"   approved → nil
   #                     │     └── SV3  v1  weights: {}                           status: current
-  #                     └── Scene Gamma  approved → nil  (no versions)
+  #                     └── Scene "Gamma" → ScriptView "Scene Gamma"  approved → nil  (no versions)
   #
   #   bob ──► "Bob's Story" (used for auth isolation checks)
 
@@ -63,15 +63,31 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
       })
       |> Ash.create()
 
+    make_script_view = fn title, position ->
+      {:ok, scene} =
+        Storybox.Stories.Scene
+        |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
+        |> Ash.create()
+
+      {:ok, _tvs} =
+        Storybox.Stories.TreatmentViewScene
+        |> Ash.Changeset.for_create(:create, %{
+          treatment_view_id: seq.id,
+          scene_id: scene.id,
+          position: position
+        })
+        |> Ash.create()
+
+      {:ok, sv} =
+        Storybox.Stories.ScriptView
+        |> Ash.Changeset.for_create(:create, %{title: "Scene #{title}", scene_id: scene.id})
+        |> Ash.create()
+
+      sv
+    end
+
     # Scene Alpha — two versions, approved → v1
-    {:ok, scene_alpha} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Scene Alpha",
-        position: 1,
-        treatment_view_id: seq.id
-      })
-      |> Ash.create()
+    scene_alpha = make_script_view.("Alpha", 1)
 
     {:ok, sv1} =
       Storybox.Stories.ScriptPiece
@@ -101,14 +117,7 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
       |> Ash.update()
 
     # Scene Beta — one version, no approved pointer
-    {:ok, scene_beta} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Scene Beta",
-        position: 2,
-        treatment_view_id: seq.id
-      })
-      |> Ash.create()
+    scene_beta = make_script_view.("Beta", 2)
 
     {:ok, sv3} =
       Storybox.Stories.ScriptPiece
@@ -122,14 +131,7 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
       |> Ash.create()
 
     # Scene Gamma — no versions
-    {:ok, scene_gamma} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Scene Gamma",
-        position: 3,
-        treatment_view_id: seq.id
-      })
-      |> Ash.create()
+    scene_gamma = make_script_view.("Gamma", 3)
 
     %{
       alice: alice,

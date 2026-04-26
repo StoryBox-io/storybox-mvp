@@ -157,13 +157,33 @@ defmodule StoryboxWeb.ApiController do
 
         treatment_view_ids = Enum.map(treatment_views, & &1.id)
 
-        script_views =
-          Storybox.Stories.ScriptView
-          |> Ash.Query.filter(treatment_view_id in ^treatment_view_ids)
-          |> Ash.Query.sort(position: :asc)
-          |> Ash.read!(authorize?: false)
+        tvscenes =
+          case treatment_view_ids do
+            [] ->
+              []
 
-        scenes_by_sequence = Enum.group_by(script_views, & &1.treatment_view_id)
+            ids ->
+              Storybox.Stories.TreatmentViewScene
+              |> Ash.Query.filter(treatment_view_id in ^ids)
+              |> Ash.Query.sort(position: :asc)
+              |> Ash.read!(authorize?: false)
+          end
+
+        scene_ids = Enum.map(tvscenes, & &1.scene_id)
+
+        script_views =
+          case scene_ids do
+            [] ->
+              []
+
+            ids ->
+              Storybox.Stories.ScriptView
+              |> Ash.Query.filter(scene_id in ^ids)
+              |> Ash.read!(authorize?: false)
+          end
+
+        script_views_by_scene = Map.new(script_views, &{&1.scene_id, &1})
+        tvscenes_by_tv = Enum.group_by(tvscenes, & &1.treatment_view_id)
         script_view_ids = Enum.map(script_views, & &1.id)
 
         case resolve_script_versions(mode, snapshot_id, story.id, script_views, script_view_ids) do
@@ -180,9 +200,17 @@ defmodule StoryboxWeb.ApiController do
                   treatment_views
                   |> Enum.map(fn tv ->
                     scenes =
-                      scenes_by_sequence
+                      tvscenes_by_tv
                       |> Map.get(tv.id, [])
-                      |> Enum.map(&scenes_with_content[&1.id])
+                      |> Enum.sort_by(& &1.position)
+                      |> Enum.flat_map(fn tvs ->
+                        sv = script_views_by_scene[tvs.scene_id]
+
+                        case sv && scenes_with_content[sv.id] do
+                          nil -> []
+                          scene_data -> [Map.put(scene_data, :position, tvs.position)]
+                        end
+                      end)
 
                     %{
                       id: tv.id,
@@ -317,7 +345,6 @@ defmodule StoryboxWeb.ApiController do
           scene = %{
             id: view.id,
             title: view.title,
-            position: view.position,
             version: format_version(piece),
             content: content
           }
@@ -589,10 +616,9 @@ defmodule StoryboxWeb.ApiController do
 
       owner =
         if script_view do
-          Storybox.Stories.TreatmentView
-          |> Ash.Query.filter(id == ^script_view.treatment_view_id and story_id == ^story.id)
-          |> Ash.read!(authorize?: false)
-          |> List.first()
+          Storybox.Stories.Scene
+          |> Ash.Query.filter(id == ^script_view.scene_id and story_id == ^story.id)
+          |> Ash.read_one!(authorize?: false)
         end
 
       if script_view && owner do
@@ -623,14 +649,26 @@ defmodule StoryboxWeb.ApiController do
       |> Ash.read!(authorize?: false)
       |> Enum.map(& &1.id)
 
-    script_view_ids =
+    scene_ids =
       case treatment_view_ids do
         [] ->
           []
 
         ids ->
-          Storybox.Stories.ScriptView
+          Storybox.Stories.TreatmentViewScene
           |> Ash.Query.filter(treatment_view_id in ^ids)
+          |> Ash.read!(authorize?: false)
+          |> Enum.map(& &1.scene_id)
+      end
+
+    script_view_ids =
+      case scene_ids do
+        [] ->
+          []
+
+        ids ->
+          Storybox.Stories.ScriptView
+          |> Ash.Query.filter(scene_id in ^ids)
           |> Ash.read!(authorize?: false)
           |> Enum.map(& &1.id)
       end

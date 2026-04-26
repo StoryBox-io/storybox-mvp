@@ -9,11 +9,13 @@ defmodule StoryboxWeb.ScriptLiveTest do
   #
   #   alice ──► "The Illusionist"  (through_lines: ["preference"])
   #               └── TreatmentView "Act 1"  pos 1
-  #                     ├── ScriptView "Opening"  pos 1  approved → nil
-  #                     │     ├── sp_v1  weights: {}      status: current
-  #                     │     └── sp_v2  weights: {}      status: current
-  #                     └── ScriptView "Confrontation"  pos 2  approved → sp_v1
-  #                           └── sp_v1  weights: {preference→0.9}  status: current  [approved]
+  #                     ├── Scene "Opening"  (pos 1 in TreatmentViewScene)
+  #                     │     └── ScriptView "Opening"  approved → nil
+  #                     │           ├── sp_v1  weights: {}      status: current
+  #                     │           └── sp_v2  weights: {}      status: current
+  #                     └── Scene "Confrontation"  (pos 2 in TreatmentViewScene)
+  #                           └── ScriptView "Confrontation"  approved → sp_v1
+  #                                 └── sp_v1  weights: {preference→0.9}  status: current  [approved]
 
   setup do
     {:ok, alice} =
@@ -43,15 +45,31 @@ defmodule StoryboxWeb.ScriptLiveTest do
       })
       |> Ash.create()
 
+    make_script_view = fn title, position ->
+      {:ok, scene} =
+        Storybox.Stories.Scene
+        |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
+        |> Ash.create()
+
+      {:ok, _tvs} =
+        Storybox.Stories.TreatmentViewScene
+        |> Ash.Changeset.for_create(:create, %{
+          treatment_view_id: treatment_view.id,
+          scene_id: scene.id,
+          position: position
+        })
+        |> Ash.create()
+
+      {:ok, sv} =
+        Storybox.Stories.ScriptView
+        |> Ash.Changeset.for_create(:create, %{title: title, scene_id: scene.id})
+        |> Ash.create()
+
+      sv
+    end
+
     # ScriptView "Opening" — two versions, no approved
-    {:ok, sv_opening} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Opening",
-        position: 1,
-        treatment_view_id: treatment_view.id
-      })
-      |> Ash.create()
+    sv_opening = make_script_view.("Opening", 1)
 
     {:ok, opening_v1} =
       Storybox.Stories.ScriptPiece
@@ -76,14 +94,7 @@ defmodule StoryboxWeb.ScriptLiveTest do
       |> Ash.create()
 
     # ScriptView "Confrontation" — one version, approved, already reviewed
-    {:ok, sv_confrontation} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Confrontation",
-        position: 2,
-        treatment_view_id: treatment_view.id
-      })
-      |> Ash.create()
+    sv_confrontation = make_script_view.("Confrontation", 2)
 
     {:ok, confrontation_v1} =
       Storybox.Stories.ScriptPiece

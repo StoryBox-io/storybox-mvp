@@ -34,13 +34,23 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       })
       |> Ash.create()
 
+    {:ok, scene} =
+      Storybox.Stories.Scene
+      |> Ash.Changeset.for_create(:create, %{title: "Scene 1", story_id: story.id})
+      |> Ash.create()
+
+    {:ok, _tvs} =
+      Storybox.Stories.TreatmentViewScene
+      |> Ash.Changeset.for_create(:create, %{
+        treatment_view_id: treatment_view.id,
+        scene_id: scene.id,
+        position: 1
+      })
+      |> Ash.create()
+
     {:ok, script_view} =
       Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Scene 1",
-        position: 1,
-        treatment_view_id: treatment_view.id
-      })
+      |> Ash.Changeset.for_create(:create, %{title: "Scene 1", scene_id: scene.id})
       |> Ash.create()
 
     {:ok, script_piece} =

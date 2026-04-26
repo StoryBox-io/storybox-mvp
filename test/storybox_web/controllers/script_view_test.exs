@@ -58,41 +58,33 @@ defmodule StoryboxWeb.ScriptViewTest do
       })
       |> Ash.create(authorize?: false)
 
-    {:ok, sv_1} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Cold open",
-        position: 1,
-        treatment_view_id: tv_1.id
-      })
-      |> Ash.create(authorize?: false)
+    make_sv = fn tv_id, title, position ->
+      {:ok, scene} =
+        Storybox.Stories.Scene
+        |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
+        |> Ash.create(authorize?: false)
 
-    {:ok, sv_2} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Inciting incident",
-        position: 2,
-        treatment_view_id: tv_1.id
-      })
-      |> Ash.create(authorize?: false)
+      {:ok, _tvs} =
+        Storybox.Stories.TreatmentViewScene
+        |> Ash.Changeset.for_create(:create, %{
+          treatment_view_id: tv_id,
+          scene_id: scene.id,
+          position: position
+        })
+        |> Ash.create(authorize?: false)
 
-    {:ok, sv_3} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "The argument",
-        position: 1,
-        treatment_view_id: tv_2.id
-      })
-      |> Ash.create(authorize?: false)
+      {:ok, sv} =
+        Storybox.Stories.ScriptView
+        |> Ash.Changeset.for_create(:create, %{title: title, scene_id: scene.id})
+        |> Ash.create(authorize?: false)
 
-    {:ok, sv_4} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Aftermath",
-        position: 2,
-        treatment_view_id: tv_2.id
-      })
-      |> Ash.create(authorize?: false)
+      sv
+    end
+
+    sv_1 = make_sv.(tv_1.id, "Cold open", 1)
+    sv_2 = make_sv.(tv_1.id, "Inciting incident", 2)
+    sv_3 = make_sv.(tv_2.id, "The argument", 1)
+    sv_4 = make_sv.(tv_2.id, "Aftermath", 2)
 
     {:ok, sp_v1} =
       Storybox.Stories.ScriptView

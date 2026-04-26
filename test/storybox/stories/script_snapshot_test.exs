@@ -25,7 +25,25 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
       })
       |> Ash.create()
 
-    %{story: story, treatment_view: treatment_view}
+    make_scene = fn title, position ->
+      {:ok, scene} =
+        Storybox.Stories.Scene
+        |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
+        |> Ash.create()
+
+      {:ok, _tvs} =
+        Storybox.Stories.TreatmentViewScene
+        |> Ash.Changeset.for_create(:create, %{
+          treatment_view_id: treatment_view.id,
+          scene_id: scene.id,
+          position: position
+        })
+        |> Ash.create()
+
+      scene
+    end
+
+    %{story: story, treatment_view: treatment_view, make_scene: make_scene}
   end
 
   describe "create" do
@@ -95,24 +113,19 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
   describe "capture action" do
     test "captures approved versions for all script views in a story", %{
       story: story,
-      treatment_view: treatment_view
+      make_scene: make_scene
     } do
+      scene1 = make_scene.("Scene 1", 1)
+      scene2 = make_scene.("Scene 2", 2)
+
       {:ok, view1} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Scene 1",
-          position: 1,
-          treatment_view_id: treatment_view.id
-        })
+        |> Ash.Changeset.for_create(:create, %{title: "Scene 1", scene_id: scene1.id})
         |> Ash.create()
 
       {:ok, view2} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Scene 2",
-          position: 2,
-          treatment_view_id: treatment_view.id
-        })
+        |> Ash.Changeset.for_create(:create, %{title: "Scene 2", scene_id: scene2.id})
         |> Ash.create()
 
       {:ok, version1} =
@@ -158,14 +171,16 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
 
     test "excludes script views with no approved version", %{
       story: story,
-      treatment_view: treatment_view
+      make_scene: make_scene
     } do
+      scene_approved = make_scene.("Approved Scene", 1)
+      scene_unapproved = make_scene.("Unapproved Scene", 2)
+
       {:ok, view_approved} =
         Storybox.Stories.ScriptView
         |> Ash.Changeset.for_create(:create, %{
           title: "Approved Scene",
-          position: 1,
-          treatment_view_id: treatment_view.id
+          scene_id: scene_approved.id
         })
         |> Ash.create()
 
@@ -173,8 +188,7 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
         Storybox.Stories.ScriptView
         |> Ash.Changeset.for_create(:create, %{
           title: "Unapproved Scene",
-          position: 2,
-          treatment_view_id: treatment_view.id
+          scene_id: scene_unapproved.id
         })
         |> Ash.create()
 

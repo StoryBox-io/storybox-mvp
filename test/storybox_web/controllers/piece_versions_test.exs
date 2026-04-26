@@ -43,13 +43,23 @@ defmodule StoryboxWeb.PieceVersionsTest do
       })
       |> Ash.create(authorize?: false)
 
+    {:ok, scene_1} =
+      Storybox.Stories.Scene
+      |> Ash.Changeset.for_create(:create, %{title: "Scene", story_id: story.id})
+      |> Ash.create(authorize?: false)
+
+    {:ok, _tvs_1} =
+      Storybox.Stories.TreatmentViewScene
+      |> Ash.Changeset.for_create(:create, %{
+        treatment_view_id: tv_1.id,
+        scene_id: scene_1.id,
+        position: 1
+      })
+      |> Ash.create(authorize?: false)
+
     {:ok, sv_1} =
       Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Scene",
-        position: 1,
-        treatment_view_id: tv_1.id
-      })
+      |> Ash.Changeset.for_create(:create, %{title: "Scene", scene_id: scene_1.id})
       |> Ash.create(authorize?: false)
 
     # Existing v1 records created directly (bypasses MinIO in setup)
@@ -84,13 +94,23 @@ defmodule StoryboxWeb.PieceVersionsTest do
       })
       |> Ash.create(authorize?: false)
 
+    {:ok, other_scene} =
+      Storybox.Stories.Scene
+      |> Ash.Changeset.for_create(:create, %{title: "Other Scene", story_id: other_story.id})
+      |> Ash.create(authorize?: false)
+
+    {:ok, _other_tvs} =
+      Storybox.Stories.TreatmentViewScene
+      |> Ash.Changeset.for_create(:create, %{
+        treatment_view_id: other_tv.id,
+        scene_id: other_scene.id,
+        position: 1
+      })
+      |> Ash.create(authorize?: false)
+
     {:ok, other_sv} =
       Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Other Scene",
-        position: 1,
-        treatment_view_id: other_tv.id
-      })
+      |> Ash.Changeset.for_create(:create, %{title: "Other Scene", scene_id: other_scene.id})
       |> Ash.create(authorize?: false)
 
     %{

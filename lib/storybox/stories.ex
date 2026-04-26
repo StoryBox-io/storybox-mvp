@@ -10,6 +10,8 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.TreatmentPiece
     resource Storybox.Stories.ScriptView
     resource Storybox.Stories.ScriptPiece
+    resource Storybox.Stories.Scene
+    resource Storybox.Stories.TreatmentViewScene
     resource Storybox.Stories.ScriptSnapshot
     resource Storybox.Stories.UpstreamChange
   end

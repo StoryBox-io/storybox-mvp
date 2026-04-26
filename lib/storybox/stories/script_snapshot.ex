@@ -44,14 +44,32 @@ defmodule Storybox.Stories.ScriptSnapshot do
           |> Ash.read!(authorize?: false)
           |> Enum.map(& &1.id)
 
+        scene_ids =
+          case treatment_view_ids do
+            [] ->
+              []
+
+            ids ->
+              Storybox.Stories.TreatmentViewScene
+              |> Ash.Query.filter(treatment_view_id in ^ids)
+              |> Ash.read!(authorize?: false)
+              |> Enum.map(& &1.scene_id)
+          end
+
         entries =
-          Storybox.Stories.ScriptView
-          |> Ash.Query.filter(treatment_view_id in ^treatment_view_ids)
-          |> Ash.read!(authorize?: false)
-          |> Enum.reject(&is_nil(&1.approved_version_id))
-          |> Map.new(fn view ->
-            {to_string(view.id), to_string(view.approved_version_id)}
-          end)
+          case scene_ids do
+            [] ->
+              %{}
+
+            ids ->
+              Storybox.Stories.ScriptView
+              |> Ash.Query.filter(scene_id in ^ids)
+              |> Ash.read!(authorize?: false)
+              |> Enum.reject(&is_nil(&1.approved_version_id))
+              |> Map.new(fn view ->
+                {to_string(view.id), to_string(view.approved_version_id)}
+              end)
+          end
 
         Storybox.Stories.ScriptSnapshot
         |> Ash.Changeset.for_create(:create, %{

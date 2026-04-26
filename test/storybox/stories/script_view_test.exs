@@ -27,59 +27,58 @@ defmodule Storybox.Stories.ScriptViewTest do
       })
       |> Ash.create()
 
-    %{story: story, treatment_view: treatment_view}
+    {:ok, scene} =
+      Storybox.Stories.Scene
+      |> Ash.Changeset.for_create(:create, %{title: "Opening Scene", story_id: story.id})
+      |> Ash.create()
+
+    {:ok, _tvs} =
+      Storybox.Stories.TreatmentViewScene
+      |> Ash.Changeset.for_create(:create, %{
+        treatment_view_id: treatment_view.id,
+        scene_id: scene.id,
+        position: 1
+      })
+      |> Ash.create()
+
+    %{story: story, scene: scene}
   end
 
   describe "create script_view" do
-    test "creates a script_view with required fields", %{treatment_view: treatment_view} do
+    test "creates a script_view with required fields", %{scene: scene} do
       assert {:ok, view} =
                Storybox.Stories.ScriptView
                |> Ash.Changeset.for_create(:create, %{
                  title: "Opening Scene",
-                 position: 1,
-                 treatment_view_id: treatment_view.id
+                 scene_id: scene.id
                })
                |> Ash.create()
 
       assert view.title == "Opening Scene"
-      assert view.position == 1
-      assert view.treatment_view_id == treatment_view.id
+      assert view.scene_id == scene.id
       assert is_nil(view.approved_version_id)
     end
 
-    test "fails without title", %{treatment_view: treatment_view} do
+    test "fails without title", %{scene: scene} do
       assert {:error, %Ash.Error.Invalid{}} =
                Storybox.Stories.ScriptView
-               |> Ash.Changeset.for_create(:create, %{
-                 position: 1,
-                 treatment_view_id: treatment_view.id
-               })
+               |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
                |> Ash.create()
     end
 
-    test "fails without treatment_view_id" do
+    test "fails without scene_id" do
       assert {:error, %Ash.Error.Invalid{}} =
                Storybox.Stories.ScriptView
-               |> Ash.Changeset.for_create(:create, %{
-                 title: "Test",
-                 position: 1
-               })
+               |> Ash.Changeset.for_create(:create, %{title: "Test"})
                |> Ash.create()
     end
   end
 
   describe "create_version action" do
-    test "creates first version with version_number 1", %{
-      story: story,
-      treatment_view: treatment_view
-    } do
+    test "creates first version with version_number 1", %{story: story, scene: scene} do
       {:ok, view} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Opening Scene",
-          position: 1,
-          treatment_view_id: treatment_view.id
-        })
+        |> Ash.Changeset.for_create(:create, %{title: "Opening Scene", scene_id: scene.id})
         |> Ash.create()
 
       assert {:ok, piece} =
@@ -99,14 +98,10 @@ defmodule Storybox.Stories.ScriptViewTest do
                Storybox.Storage.uri_for_scene(story.id, view.id, 1)
     end
 
-    test "increments version_number for subsequent versions", %{treatment_view: treatment_view} do
+    test "increments version_number for subsequent versions", %{scene: scene} do
       {:ok, view} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Test Scene",
-          position: 1,
-          treatment_view_id: treatment_view.id
-        })
+        |> Ash.Changeset.for_create(:create, %{title: "Test Scene", scene_id: scene.id})
         |> Ash.create()
 
       {:ok, _piece1} =
@@ -130,14 +125,10 @@ defmodule Storybox.Stories.ScriptViewTest do
   end
 
   describe "approve_version action" do
-    test "sets approved_version_id on the view", %{treatment_view: treatment_view} do
+    test "sets approved_version_id on the view", %{scene: scene} do
       {:ok, view} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Test Scene",
-          position: 1,
-          treatment_view_id: treatment_view.id
-        })
+        |> Ash.Changeset.for_create(:create, %{title: "Test Scene", scene_id: scene.id})
         |> Ash.create()
 
       {:ok, piece} =
@@ -158,16 +149,10 @@ defmodule Storybox.Stories.ScriptViewTest do
   end
 
   describe "set_weights action on ScriptPiece" do
-    test "sets weights map on a piece with empty weights and persists it", %{
-      treatment_view: treatment_view
-    } do
+    test "sets weights map on a piece with empty weights and persists it", %{scene: scene} do
       {:ok, view} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Test Scene",
-          position: 1,
-          treatment_view_id: treatment_view.id
-        })
+        |> Ash.Changeset.for_create(:create, %{title: "Test Scene", scene_id: scene.id})
         |> Ash.create()
 
       {:ok, piece} =
@@ -195,14 +180,10 @@ defmodule Storybox.Stories.ScriptViewTest do
       assert reloaded.weights == %{"preference" => 0.6}
     end
 
-    test "replacing weights removes keys not in the new map", %{treatment_view: treatment_view} do
+    test "replacing weights removes keys not in the new map", %{scene: scene} do
       {:ok, view} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Test Scene 2",
-          position: 2,
-          treatment_view_id: treatment_view.id
-        })
+        |> Ash.Changeset.for_create(:create, %{title: "Test Scene 2", scene_id: scene.id})
         |> Ash.create()
 
       {:ok, piece} =
@@ -226,23 +207,15 @@ defmodule Storybox.Stories.ScriptViewTest do
   end
 
   describe "read" do
-    test "returns all script_views", %{treatment_view: treatment_view} do
+    test "returns all script_views", %{scene: scene} do
       {:ok, view1} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Scene 1",
-          position: 1,
-          treatment_view_id: treatment_view.id
-        })
+        |> Ash.Changeset.for_create(:create, %{title: "Scene 1", scene_id: scene.id})
         |> Ash.create()
 
       {:ok, view2} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Scene 2",
-          position: 2,
-          treatment_view_id: treatment_view.id
-        })
+        |> Ash.Changeset.for_create(:create, %{title: "Scene 2", scene_id: scene.id})
         |> Ash.create()
 
       assert {:ok, views} = Storybox.Stories.ScriptView |> Ash.read()
