@@ -504,7 +504,52 @@ if little_witch = all_stories["Little Witch"] do
         seed_scene.(little_witch.id, summoning.id, position, title, content)
       end
 
-      IO.puts("  Created 3 scenes for The Summoning (all with approved script)")
+      # Add a v2 to the first Summoning scene so the Compare page has something to show.
+      # v1 stays approved; v2 is unapproved so Approve can be exercised.
+      first_scene_view =
+        Storybox.Stories.ScriptView
+        |> Ash.Query.filter(title == "INT. COTTAGE - NIGHT")
+        |> Ash.read_one!(authorize?: false)
+
+      v2_uri = Storybox.Storage.uri_for_scene(little_witch.id, first_scene_view.id, 2)
+
+      Storybox.Storage.put_content(v2_uri, """
+      INT. COTTAGE - NIGHT
+
+      The cottage is dark. FLEUR stands at the chest, key in hand. She has not moved in an hour.
+
+      The hearth fire watches her. She knows it is watching.
+
+      FLEUR
+      (quietly, not to herself)
+      I know you're there.
+
+      The fire shifts. Not a flare — a lean.
+
+      She turns the key. Lifts the BOOK OF DEMONS out of the chest. It is heavier than she remembers.
+
+      She does not open it yet. She sets it on the table and looks at it.
+
+      FLEUR (CONT'D)
+      Silas said never. She didn't say why.
+
+      A long beat. The fire leans further.
+
+      Fleur opens the cover.
+      """)
+
+      {:ok, _v2} =
+        Storybox.Stories.ScriptPiece
+        |> Ash.Changeset.for_create(:create, %{
+          script_view_id: first_scene_view.id,
+          content_uri: v2_uri,
+          version_number: 2,
+          upstream_status: :current,
+          weights: %{}
+        })
+        |> Ash.create(authorize?: false)
+
+      IO.puts("  Created 3 scenes for The Summoning (cottage scene has v1 approved + v2 draft)")
     end
   end
 
