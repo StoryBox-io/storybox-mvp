@@ -23,46 +23,48 @@ defmodule StoryboxWeb.SceneCompareLive do
              |> redirect(to: ~p"/")}
 
           story ->
-            scene =
-              Storybox.Stories.ScenePiece
+            script_view =
+              Storybox.Stories.ScriptView
               |> Ash.Query.filter(id == ^scene_id)
               |> Ash.read_one!(authorize?: false)
 
-            case scene do
+            case script_view do
               nil ->
                 {:ok,
                  socket
                  |> put_flash(:error, "Scene not found.")
                  |> redirect(to: ~p"/")}
 
-              scene ->
-                sequence =
-                  Storybox.Stories.SequencePiece
-                  |> Ash.Query.filter(id == ^scene.sequence_piece_id and story_id == ^story.id)
+              script_view ->
+                treatment_view =
+                  Storybox.Stories.TreatmentView
+                  |> Ash.Query.filter(
+                    id == ^script_view.treatment_view_id and story_id == ^story.id
+                  )
                   |> Ash.read_one!(authorize?: false)
 
-                case sequence do
+                case treatment_view do
                   nil ->
                     {:ok,
                      socket
                      |> put_flash(:error, "Scene not found.")
                      |> redirect(to: ~p"/")}
 
-                  sequence ->
-                    versions = load_versions(scene)
+                  treatment_view ->
+                    pieces = load_pieces(script_view)
 
                     {:ok,
                      socket
                      |> assign(:story, story)
-                     |> assign(:sequence, sequence)
-                     |> assign(:scene, scene)
-                     |> assign(:versions, versions)
+                     |> assign(:sequence, treatment_view)
+                     |> assign(:scene, script_view)
+                     |> assign(:versions, pieces)
                      |> assign(:left_version, nil)
                      |> assign(:right_version, nil)
                      |> assign(:left_content, nil)
                      |> assign(:right_content, nil)
                      |> assign(:weight_forms, MapSet.new())
-                     |> assign(:page_title, "#{story.title} — #{scene.title} Compare")}
+                     |> assign(:page_title, "#{story.title} — #{script_view.title} Compare")}
                 end
             end
         end
@@ -71,18 +73,18 @@ defmodule StoryboxWeb.SceneCompareLive do
 
   @impl true
   def handle_params(params, _uri, socket) do
-    versions = socket.assigns.versions
+    pieces = socket.assigns.versions
 
     right_version =
       case parse_version_number(params["right"]) do
-        nil -> default_right(versions)
-        n -> find_version(versions, n) || default_right(versions)
+        nil -> default_right(pieces)
+        n -> find_version(pieces, n) || default_right(pieces)
       end
 
     left_version =
       case parse_version_number(params["left"]) do
-        nil -> default_left(versions)
-        n -> find_version(versions, n) || default_left(versions)
+        nil -> default_left(pieces)
+        n -> find_version(pieces, n) || default_left(pieces)
       end
 
     {:noreply,
@@ -99,27 +101,27 @@ defmodule StoryboxWeb.SceneCompareLive do
     |> Ash.Changeset.for_update(:approve_version, %{version_id: version_id})
     |> Ash.update!(authorize?: false)
 
-    scene =
-      Storybox.Stories.ScenePiece
+    script_view =
+      Storybox.Stories.ScriptView
       |> Ash.Query.filter(id == ^socket.assigns.scene.id)
       |> Ash.read_one!(authorize?: false)
 
-    versions = load_versions(scene)
+    pieces = load_pieces(script_view)
 
     left_version =
       if socket.assigns.left_version,
-        do: find_version(versions, socket.assigns.left_version.version_number),
+        do: find_version(pieces, socket.assigns.left_version.version_number),
         else: nil
 
     right_version =
       if socket.assigns.right_version,
-        do: find_version(versions, socket.assigns.right_version.version_number),
+        do: find_version(pieces, socket.assigns.right_version.version_number),
         else: nil
 
     {:noreply,
      socket
-     |> assign(:scene, scene)
-     |> assign(:versions, versions)
+     |> assign(:scene, script_view)
+     |> assign(:versions, pieces)
      |> assign(:left_version, left_version)
      |> assign(:right_version, right_version)}
   end
@@ -140,31 +142,31 @@ defmodule StoryboxWeb.SceneCompareLive do
   def handle_event("set_weights", %{"version_id" => version_id, "weights" => raw_weights}, socket) do
     weights = parse_weights(raw_weights)
 
-    version =
-      Storybox.Stories.SceneVersion
+    piece =
+      Storybox.Stories.ScriptPiece
       |> Ash.Query.filter(id == ^version_id)
       |> Ash.read_one!(authorize?: false)
 
-    version
+    piece
     |> Ash.Changeset.for_update(:set_weights, %{weights: weights})
     |> Ash.update!(authorize?: false)
 
-    versions = load_versions(socket.assigns.scene)
+    pieces = load_pieces(socket.assigns.scene)
     weight_forms = MapSet.delete(socket.assigns.weight_forms, version_id)
 
     left_version =
       if socket.assigns.left_version,
-        do: find_version(versions, socket.assigns.left_version.version_number),
+        do: find_version(pieces, socket.assigns.left_version.version_number),
         else: nil
 
     right_version =
       if socket.assigns.right_version,
-        do: find_version(versions, socket.assigns.right_version.version_number),
+        do: find_version(pieces, socket.assigns.right_version.version_number),
         else: nil
 
     {:noreply,
      socket
-     |> assign(:versions, versions)
+     |> assign(:versions, pieces)
      |> assign(:left_version, left_version)
      |> assign(:right_version, right_version)
      |> assign(:weight_forms, weight_forms)}
@@ -429,15 +431,15 @@ defmodule StoryboxWeb.SceneCompareLive do
     """
   end
 
-  defp load_versions(scene) do
-    Storybox.Stories.SceneVersion
-    |> Ash.Query.filter(scene_piece_id == ^scene.id)
+  defp load_pieces(script_view) do
+    Storybox.Stories.ScriptPiece
+    |> Ash.Query.filter(script_view_id == ^script_view.id)
     |> Ash.Query.sort(version_number: :desc)
     |> Ash.read!(authorize?: false)
   end
 
-  defp find_version(_versions, nil), do: nil
-  defp find_version(versions, number), do: Enum.find(versions, &(&1.version_number == number))
+  defp find_version(_pieces, nil), do: nil
+  defp find_version(pieces, number), do: Enum.find(pieces, &(&1.version_number == number))
 
   defp default_right([]), do: nil
   defp default_right([latest | _]), do: latest
@@ -448,8 +450,8 @@ defmodule StoryboxWeb.SceneCompareLive do
 
   defp fetch_content(nil), do: nil
 
-  defp fetch_content(version) do
-    case Storybox.Storage.get_content(version.content_uri) do
+  defp fetch_content(piece) do
+    case Storybox.Storage.get_content(piece.content_uri) do
       {:ok, text} -> text
       _ -> nil
     end

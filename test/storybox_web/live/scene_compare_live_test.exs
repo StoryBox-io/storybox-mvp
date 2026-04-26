@@ -55,7 +55,7 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
       |> Ash.create()
 
     {:ok, seq} =
-      Storybox.Stories.SequencePiece
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Seq One",
         position: 1,
@@ -65,18 +65,18 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
 
     # Scene Alpha — two versions, approved → v1
     {:ok, scene_alpha} =
-      Storybox.Stories.ScenePiece
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Scene Alpha",
         position: 1,
-        sequence_piece_id: seq.id
+        treatment_view_id: seq.id
       })
       |> Ash.create()
 
     {:ok, sv1} =
-      Storybox.Stories.SceneVersion
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        scene_piece_id: scene_alpha.id,
+        script_view_id: scene_alpha.id,
         content_uri: "storybox://test/alpha/v1",
         version_number: 1,
         upstream_status: :current,
@@ -85,9 +85,9 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
       |> Ash.create()
 
     {:ok, sv2} =
-      Storybox.Stories.SceneVersion
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        scene_piece_id: scene_alpha.id,
+        script_view_id: scene_alpha.id,
         content_uri: "storybox://test/alpha/v2",
         version_number: 2,
         upstream_status: :stale,
@@ -102,18 +102,18 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
 
     # Scene Beta — one version, no approved pointer
     {:ok, scene_beta} =
-      Storybox.Stories.ScenePiece
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Scene Beta",
         position: 2,
-        sequence_piece_id: seq.id
+        treatment_view_id: seq.id
       })
       |> Ash.create()
 
     {:ok, sv3} =
-      Storybox.Stories.SceneVersion
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        scene_piece_id: scene_beta.id,
+        script_view_id: scene_beta.id,
         content_uri: "storybox://test/beta/v1",
         version_number: 1,
         upstream_status: :current,
@@ -123,11 +123,11 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
 
     # Scene Gamma — no versions
     {:ok, scene_gamma} =
-      Storybox.Stories.ScenePiece
+      Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Scene Gamma",
         position: 3,
-        sequence_piece_id: seq.id
+        treatment_view_id: seq.id
       })
       |> Ash.create()
 
@@ -311,7 +311,7 @@ defmodule StoryboxWeb.SceneCompareLiveTest do
 
       # DB pointer is updated
       updated =
-        Storybox.Stories.ScenePiece
+        Storybox.Stories.ScriptView
         |> Ash.Query.filter(id == ^scene.id)
         |> Ash.read_one!(authorize?: false)
 

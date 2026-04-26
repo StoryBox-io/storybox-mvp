@@ -61,7 +61,7 @@ defmodule StoryboxWeb.TreatmentLiveTest do
 
     # Act 1 — "The Reveal" (pos 1), approved → v1
     {:ok, piece_reveal} =
-      Storybox.Stories.SequencePiece
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "The Reveal",
         act: "Act 1",
@@ -71,9 +71,9 @@ defmodule StoryboxWeb.TreatmentLiveTest do
       |> Ash.create()
 
     {:ok, reveal_v1} =
-      Storybox.Stories.SequenceVersion
+      Storybox.Stories.TreatmentPiece
       |> Ash.Changeset.for_create(:create, %{
-        sequence_piece_id: piece_reveal.id,
+        treatment_view_id: piece_reveal.id,
         content_uri: "storybox://test/reveal/v1",
         version_number: 1,
         upstream_status: :current,
@@ -82,9 +82,9 @@ defmodule StoryboxWeb.TreatmentLiveTest do
       |> Ash.create()
 
     {:ok, reveal_v2} =
-      Storybox.Stories.SequenceVersion
+      Storybox.Stories.TreatmentPiece
       |> Ash.Changeset.for_create(:create, %{
-        sequence_piece_id: piece_reveal.id,
+        treatment_view_id: piece_reveal.id,
         content_uri: "storybox://test/reveal/v2",
         version_number: 2,
         upstream_status: :stale,
@@ -99,7 +99,7 @@ defmodule StoryboxWeb.TreatmentLiveTest do
 
     # Act 1 — "The Escape" (pos 2), no approved version
     {:ok, piece_escape} =
-      Storybox.Stories.SequencePiece
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "The Escape",
         act: "Act 1",
@@ -109,9 +109,9 @@ defmodule StoryboxWeb.TreatmentLiveTest do
       |> Ash.create()
 
     {:ok, escape_v1} =
-      Storybox.Stories.SequenceVersion
+      Storybox.Stories.TreatmentPiece
       |> Ash.Changeset.for_create(:create, %{
-        sequence_piece_id: piece_escape.id,
+        treatment_view_id: piece_escape.id,
         content_uri: "storybox://test/escape/v1",
         version_number: 1,
         upstream_status: :current,
@@ -121,7 +121,7 @@ defmodule StoryboxWeb.TreatmentLiveTest do
 
     # Act 2 — "Fallout" (pos 3), approved → v3
     {:ok, piece_fallout} =
-      Storybox.Stories.SequencePiece
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Fallout",
         act: "Act 2",
@@ -131,9 +131,9 @@ defmodule StoryboxWeb.TreatmentLiveTest do
       |> Ash.create()
 
     {:ok, fallout_v3} =
-      Storybox.Stories.SequenceVersion
+      Storybox.Stories.TreatmentPiece
       |> Ash.Changeset.for_create(:create, %{
-        sequence_piece_id: piece_fallout.id,
+        treatment_view_id: piece_fallout.id,
         content_uri: "storybox://test/fallout/v3",
         version_number: 3,
         upstream_status: :current,
@@ -148,7 +148,7 @@ defmodule StoryboxWeb.TreatmentLiveTest do
 
     # No act — "Coda" (pos 4), no versions
     {:ok, piece_coda} =
-      Storybox.Stories.SequencePiece
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, %{
         title: "Coda",
         act: nil,
@@ -357,7 +357,7 @@ defmodule StoryboxWeb.TreatmentLiveTest do
 
       # v2 is now marked approved in DB
       updated_piece =
-        Storybox.Stories.SequencePiece
+        Storybox.Stories.TreatmentView
         |> Ash.Query.filter(id == ^piece_reveal.id)
         |> Ash.read_one!(authorize?: false)
 
@@ -384,7 +384,7 @@ defmodule StoryboxWeb.TreatmentLiveTest do
       |> render_click()
 
       updated_fallout =
-        Storybox.Stories.SequencePiece
+        Storybox.Stories.TreatmentView
         |> Ash.Query.filter(id == ^piece_fallout.id)
         |> Ash.read_one!(authorize?: false)
 
@@ -465,7 +465,7 @@ defmodule StoryboxWeb.TreatmentLiveTest do
 
       # Weights persisted in DB
       updated =
-        Storybox.Stories.SequenceVersion
+        Storybox.Stories.TreatmentPiece
         |> Ash.Query.filter(id == ^reveal_v2.id)
         |> Ash.read_one!(authorize?: false)
 

@@ -5,10 +5,10 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
 
   alias Storybox.Stories.{
     Character,
-    ScenePiece,
-    SceneVersion,
-    SequencePiece,
-    SequenceVersion,
+    ScriptPiece,
+    ScriptView,
+    TreatmentPiece,
+    TreatmentView,
     Story,
     UpstreamChange,
     World
@@ -39,34 +39,34 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
       |> Ash.Changeset.for_create(:create, %{history: "Ancient times", story_id: story.id})
       |> Ash.create()
 
-    {:ok, sequence} =
-      SequencePiece
+    {:ok, treatment_view} =
+      TreatmentView
       |> Ash.Changeset.for_create(:create, %{title: "Act 1", position: 1, story_id: story.id})
       |> Ash.create()
 
-    {:ok, sequence_version} =
-      SequenceVersion
+    {:ok, treatment_piece} =
+      TreatmentPiece
       |> Ash.Changeset.for_create(:create, %{
-        sequence_piece_id: sequence.id,
-        content_uri: "storybox://stories/#{story.id}/sequences/#{sequence.id}/v1",
+        treatment_view_id: treatment_view.id,
+        content_uri: "storybox://stories/#{story.id}/sequences/#{treatment_view.id}/v1",
         version_number: 1
       })
       |> Ash.create()
 
-    {:ok, scene} =
-      ScenePiece
+    {:ok, script_view} =
+      ScriptView
       |> Ash.Changeset.for_create(:create, %{
         title: "Scene 1",
         position: 1,
-        sequence_piece_id: sequence.id
+        treatment_view_id: treatment_view.id
       })
       |> Ash.create()
 
-    {:ok, scene_version} =
-      SceneVersion
+    {:ok, script_piece} =
+      ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        scene_piece_id: scene.id,
-        content_uri: "storybox://stories/#{story.id}/scenes/#{scene.id}/v1",
+        script_view_id: script_view.id,
+        content_uri: "storybox://stories/#{story.id}/scenes/#{script_view.id}/v1",
         version_number: 1
       })
       |> Ash.create()
@@ -75,37 +75,37 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
       story: story,
       character: character,
       world: world,
-      sequence_version: sequence_version,
-      scene_version: scene_version
+      treatment_piece: treatment_piece,
+      script_piece: script_piece
     }
   end
 
   describe "story update propagation" do
-    test "marks all sequence_versions stale", %{story: story, sequence_version: sv} do
-      assert sv.upstream_status == :current
+    test "marks all treatment_pieces stale", %{story: story, treatment_piece: tp} do
+      assert tp.upstream_status == :current
 
       story
       |> Ash.Changeset.for_update(:update, %{title: "Updated Title"})
       |> Ash.update!()
 
-      updated = Ash.get!(SequenceVersion, sv.id)
+      updated = Ash.get!(TreatmentPiece, tp.id)
       assert updated.upstream_status == :stale
     end
 
-    test "marks all scene_versions stale", %{story: story, scene_version: sv} do
-      assert sv.upstream_status == :current
+    test "marks all script_pieces stale", %{story: story, script_piece: sp} do
+      assert sp.upstream_status == :current
 
       story
       |> Ash.Changeset.for_update(:update, %{title: "Updated Title"})
       |> Ash.update!()
 
-      updated = Ash.get!(SceneVersion, sv.id)
+      updated = Ash.get!(ScriptPiece, sp.id)
       assert updated.upstream_status == :stale
     end
 
-    test "creates UpstreamChange for sequence_version with component_type :story", %{
+    test "creates UpstreamChange for treatment_piece with component_type :story", %{
       story: story,
-      sequence_version: sv
+      treatment_piece: tp
     } do
       story
       |> Ash.Changeset.for_update(:update, %{logline: "New logline"})
@@ -114,7 +114,7 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
       assert {:ok, [change]} =
                UpstreamChange
                |> Ash.Query.filter(
-                 piece_version_type == :sequence_version and piece_version_id == ^sv.id
+                 piece_version_type == :treatment_piece and piece_version_id == ^tp.id
                )
                |> Ash.read()
 
@@ -126,9 +126,9 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
       assert change.version_before != change.version_after
     end
 
-    test "creates UpstreamChange for scene_version with component_type :story", %{
+    test "creates UpstreamChange for script_piece with component_type :story", %{
       story: story,
-      scene_version: sv
+      script_piece: sp
     } do
       story
       |> Ash.Changeset.for_update(:update, %{logline: "New logline"})
@@ -137,7 +137,7 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
       assert {:ok, [change]} =
                UpstreamChange
                |> Ash.Query.filter(
-                 piece_version_type == :scene_version and piece_version_id == ^sv.id
+                 piece_version_type == :script_piece and piece_version_id == ^sp.id
                )
                |> Ash.read()
 
@@ -147,27 +147,27 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
   end
 
   describe "character update propagation" do
-    test "marks sequence_versions stale", %{character: character, sequence_version: sv} do
+    test "marks treatment_pieces stale", %{character: character, treatment_piece: tp} do
       character
       |> Ash.Changeset.for_update(:update, %{essence: "Brave"})
       |> Ash.update!()
 
-      updated = Ash.get!(SequenceVersion, sv.id)
+      updated = Ash.get!(TreatmentPiece, tp.id)
       assert updated.upstream_status == :stale
     end
 
-    test "marks scene_versions stale", %{character: character, scene_version: sv} do
+    test "marks script_pieces stale", %{character: character, script_piece: sp} do
       character
       |> Ash.Changeset.for_update(:update, %{essence: "Brave"})
       |> Ash.update!()
 
-      updated = Ash.get!(SceneVersion, sv.id)
+      updated = Ash.get!(ScriptPiece, sp.id)
       assert updated.upstream_status == :stale
     end
 
     test "creates UpstreamChange with component_type :character", %{
       character: character,
-      sequence_version: sv
+      treatment_piece: tp
     } do
       character
       |> Ash.Changeset.for_update(:update, %{essence: "Brave"})
@@ -176,7 +176,7 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
       assert {:ok, [change]} =
                UpstreamChange
                |> Ash.Query.filter(
-                 piece_version_type == :sequence_version and piece_version_id == ^sv.id
+                 piece_version_type == :treatment_piece and piece_version_id == ^tp.id
                )
                |> Ash.read()
 
@@ -186,27 +186,27 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
   end
 
   describe "world update propagation" do
-    test "marks sequence_versions stale", %{world: world, sequence_version: sv} do
+    test "marks treatment_pieces stale", %{world: world, treatment_piece: tp} do
       world
       |> Ash.Changeset.for_update(:update, %{rules: "Magic is real"})
       |> Ash.update!()
 
-      updated = Ash.get!(SequenceVersion, sv.id)
+      updated = Ash.get!(TreatmentPiece, tp.id)
       assert updated.upstream_status == :stale
     end
 
-    test "marks scene_versions stale", %{world: world, scene_version: sv} do
+    test "marks script_pieces stale", %{world: world, script_piece: sp} do
       world
       |> Ash.Changeset.for_update(:update, %{rules: "Magic is real"})
       |> Ash.update!()
 
-      updated = Ash.get!(SceneVersion, sv.id)
+      updated = Ash.get!(ScriptPiece, sp.id)
       assert updated.upstream_status == :stale
     end
 
     test "creates UpstreamChange with component_type :world", %{
       world: world,
-      scene_version: sv
+      script_piece: sp
     } do
       world
       |> Ash.Changeset.for_update(:update, %{rules: "Magic is real"})
@@ -215,7 +215,7 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
       assert {:ok, [change]} =
                UpstreamChange
                |> Ash.Query.filter(
-                 piece_version_type == :scene_version and piece_version_id == ^sv.id
+                 piece_version_type == :script_piece and piece_version_id == ^sp.id
                )
                |> Ash.read()
 

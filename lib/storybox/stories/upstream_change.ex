@@ -12,7 +12,7 @@ defmodule Storybox.Stories.UpstreamChange do
     uuid_primary_key :id
 
     attribute :piece_version_type, :atom,
-      constraints: [one_of: [:sequence_version, :scene_version]],
+      constraints: [one_of: [:treatment_piece, :script_piece]],
       allow_nil?: false,
       public?: true
 

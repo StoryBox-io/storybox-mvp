@@ -36,31 +36,31 @@ defmodule StoryboxWeb.TreatmentViewTest do
     put_req_header(conn, "authorization", "Bearer #{raw_token}")
   end
 
-  defp create_piece(story, attrs) do
-    {:ok, piece} =
-      Storybox.Stories.SequencePiece
+  defp create_treatment_view(story, attrs) do
+    {:ok, view} =
+      Storybox.Stories.TreatmentView
       |> Ash.Changeset.for_create(:create, Map.put(attrs, :story_id, story.id))
       |> Ash.create(authorize?: false)
 
-    piece
+    view
   end
 
-  defp create_version(piece, content) do
-    {:ok, version} =
-      Storybox.Stories.SequencePiece
+  defp create_version(view, content) do
+    {:ok, piece} =
+      Storybox.Stories.TreatmentView
       |> Ash.ActionInput.for_action(:create_version, %{
-        sequence_piece_id: piece.id,
+        treatment_view_id: view.id,
         content: content
       })
       |> Ash.run_action(authorize?: false)
 
-    version
+    piece
   end
 
-  defp approve_version(piece, version) do
+  defp approve_version(view, piece) do
     {:ok, updated} =
-      piece
-      |> Ash.Changeset.for_update(:approve_version, %{version_id: version.id})
+      view
+      |> Ash.Changeset.for_update(:approve_version, %{version_id: piece.id})
       |> Ash.update(authorize?: false)
 
     updated
@@ -87,15 +87,15 @@ defmodule StoryboxWeb.TreatmentViewTest do
       story: story,
       raw_token: raw_token
     } do
-      p1 = create_piece(story, %{title: "Opening", act: "Act I", position: 1})
+      p1 = create_treatment_view(story, %{title: "Opening", act: "Act I", position: 1})
       v1 = create_version(p1, "EXT. PARK - DAY\n\nThe story begins.")
       approve_version(p1, v1)
 
-      # Second piece in Act I — no approved version
-      create_piece(story, %{title: "Complication", act: "Act I", position: 2})
+      # Second view in Act I — no approved version
+      create_treatment_view(story, %{title: "Complication", act: "Act I", position: 2})
 
-      # Piece in Act II — with approved version
-      p3 = create_piece(story, %{title: "Midpoint", act: "Act II", position: 1})
+      # View in Act II — with approved version
+      p3 = create_treatment_view(story, %{title: "Midpoint", act: "Act II", position: 1})
       v3 = create_version(p3, "INT. ROOM - NIGHT\n\nThe midpoint shift.")
       approve_version(p3, v3)
 
@@ -128,8 +128,8 @@ defmodule StoryboxWeb.TreatmentViewTest do
       story: story,
       raw_token: raw_token
     } do
-      create_piece(story, %{title: "Unassigned", act: nil, position: 1})
-      create_piece(story, %{title: "First Act", act: "Act I", position: 1})
+      create_treatment_view(story, %{title: "Unassigned", act: nil, position: 1})
+      create_treatment_view(story, %{title: "First Act", act: "Act I", position: 1})
 
       conn = conn |> authed(raw_token) |> get("/api/stories/#{story.id}/views/treatment")
 
@@ -145,9 +145,9 @@ defmodule StoryboxWeb.TreatmentViewTest do
       story: story,
       raw_token: raw_token
     } do
-      create_piece(story, %{title: "Third", act: "Act I", position: 3})
-      create_piece(story, %{title: "First", act: "Act I", position: 1})
-      create_piece(story, %{title: "Second", act: "Act I", position: 2})
+      create_treatment_view(story, %{title: "Third", act: "Act I", position: 3})
+      create_treatment_view(story, %{title: "First", act: "Act I", position: 1})
+      create_treatment_view(story, %{title: "Second", act: "Act I", position: 2})
 
       conn = conn |> authed(raw_token) |> get("/api/stories/#{story.id}/views/treatment")
 
@@ -160,7 +160,7 @@ defmodule StoryboxWeb.TreatmentViewTest do
       story: story,
       raw_token: raw_token
     } do
-      p = create_piece(story, %{title: "Scene", act: "Act I", position: 1})
+      p = create_treatment_view(story, %{title: "Scene", act: "Act I", position: 1})
       v = create_version(p, "content")
       approve_version(p, v)
 
@@ -213,7 +213,7 @@ defmodule StoryboxWeb.TreatmentViewTest do
         })
         |> Ash.create(authorize?: false)
 
-      p = create_piece(story, %{title: "Opening", act: "Act I", position: 1})
+      p = create_treatment_view(story, %{title: "Opening", act: "Act I", position: 1})
       v = create_version(p, "EXT. FOREST - DAY\n\nJane walks alone.")
       approve_version(p, v)
 
@@ -246,7 +246,7 @@ defmodule StoryboxWeb.TreatmentViewTest do
       story: story,
       raw_token: raw_token
     } do
-      p = create_piece(story, %{title: "Draft", act: "Act I", position: 1})
+      p = create_treatment_view(story, %{title: "Draft", act: "Act I", position: 1})
       create_version(p, "First draft content.")
       create_version(p, "Second draft content.")
 
@@ -266,12 +266,12 @@ defmodule StoryboxWeb.TreatmentViewTest do
       other_story: other_story,
       raw_token: raw_token
     } do
-      other_piece = create_piece(other_story, %{title: "Foreign", act: nil, position: 1})
+      other_view = create_treatment_view(other_story, %{title: "Foreign", act: nil, position: 1})
 
       conn =
         conn
         |> authed(raw_token)
-        |> get("/api/stories/#{story.id}/sequences/#{other_piece.id}")
+        |> get("/api/stories/#{story.id}/sequences/#{other_view.id}")
 
       assert json_response(conn, 404)["error"] == "not found"
     end
@@ -281,7 +281,7 @@ defmodule StoryboxWeb.TreatmentViewTest do
       story: story,
       raw_token: raw_token
     } do
-      p = create_piece(story, %{title: "Empty", act: nil, position: 1})
+      p = create_treatment_view(story, %{title: "Empty", act: nil, position: 1})
 
       conn =
         conn
@@ -296,12 +296,12 @@ defmodule StoryboxWeb.TreatmentViewTest do
       story: story,
       raw_token: raw_token
     } do
-      p = create_piece(story, %{title: "Broken", act: nil, position: 1})
+      p = create_treatment_view(story, %{title: "Broken", act: nil, position: 1})
 
       {:ok, bad_version} =
-        Storybox.Stories.SequenceVersion
+        Storybox.Stories.TreatmentPiece
         |> Ash.Changeset.for_create(:create, %{
-          sequence_piece_id: p.id,
+          treatment_view_id: p.id,
           content_uri:
             "storybox://stories/#{story.id}/sequences/#{p.id}/v999_nonexistent.fountain",
           version_number: 1,

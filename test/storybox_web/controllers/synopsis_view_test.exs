@@ -52,7 +52,7 @@ defmodule StoryboxWeb.SynopsisViewTest do
       raw_token: raw_token
     } do
       {:ok, _v1} =
-        Storybox.Stories.SynopsisVersion
+        Storybox.Stories.SynopsisView
         |> Ash.ActionInput.for_action(:create_version, %{
           story_id: story.id,
           content: "First synopsis draft."
@@ -60,7 +60,7 @@ defmodule StoryboxWeb.SynopsisViewTest do
         |> Ash.run_action()
 
       {:ok, _v2} =
-        Storybox.Stories.SynopsisVersion
+        Storybox.Stories.SynopsisView
         |> Ash.ActionInput.for_action(:create_version, %{
           story_id: story.id,
           content: "Second synopsis draft."
@@ -90,7 +90,7 @@ defmodule StoryboxWeb.SynopsisViewTest do
       raw_token: raw_token
     } do
       {:ok, _version} =
-        Storybox.Stories.SynopsisVersion
+        Storybox.Stories.SynopsisView
         |> Ash.Changeset.for_create(:create, %{
           story_id: story.id,
           content_uri: "storybox://stories/#{story.id}/synopsis/v999_nonexistent.fountain",
@@ -114,7 +114,7 @@ defmodule StoryboxWeb.SynopsisViewTest do
       content = "Frank carries something back \u2014 something that has no name."
 
       {:ok, _v} =
-        Storybox.Stories.SynopsisVersion
+        Storybox.Stories.SynopsisView
         |> Ash.ActionInput.for_action(:create_version, %{
           story_id: story.id,
           content: content
