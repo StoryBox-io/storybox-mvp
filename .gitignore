@@ -28,4 +28,5 @@ storybox-*.tar
 # Claude Code
 CLAUDE.md
 /.claude/*
+!/.claude/model/
 AGENTS.md
