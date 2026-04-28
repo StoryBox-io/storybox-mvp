@@ -172,7 +172,9 @@ Components own their Views, Pieces, and Tasks.
 
 ### Pieces (content)
 
-All Pieces belong to a Component. All carry `version_number` and tag state. Provenance attributes link downstream Pieces to upstream sources.
+All Pieces belong to a Component. All carry `version_number`. Provenance attributes link downstream Pieces to upstream sources.
+
+> **Tag state — deferred from MVP.** The platonic model treats Pieces as carrying tag state (production-flow status — e.g. `working | delivered | live` or similar) alongside `version_number`. The MVP omits the field while the production-flow vocabulary settles; the staleness mechanism alone provides the network-symmetry signal. The slot is reserved for a future production-flow milestone — the conceptual claim that "Pieces carry tag state" remains accurate at the platonic layer.
 
 | Piece | Resource | Owner | Provenance |
 |---|---|---|---|
@@ -233,7 +235,7 @@ The Story Component — through its `SynopsisView`, `TreatmentView`, and through
 
 Scenes are the **generative pieces** — modular, reusable. Many `ScriptPieces` can exist for the same beat; most won't make the cut. A single sequence might be served by three candidate Scenes; only one (or a chosen subset, in chosen order) gets pinned into the `SequenceView` blueprint at a given ViewVersion. Scenes are portable: a Scene Component that earns its place in one Story can be referenced from another.
 
-**Approval lives in the ViewVersion, not on the Piece.** A `ScriptPiece` carries a tag state (`:unreviewed`, `:approved`, etc.), but endorsement of that Piece for a specific Story lives in the `SequenceView` ViewVersion that pins it (and transitively the `Story.ScriptView` ViewVersion that pins the SequenceView). The same `ScriptPiece` can be approved in Story A's assembly and unreviewed in Story B's — the tag records production state; the ViewVersion records curatorial intent.
+**Approval lives in the ViewVersion, not on the Piece.** A `ScriptPiece` will carry a tag state (production-flow status — `working | delivered | live` or similar) in a future production-flow milestone, but endorsement of that Piece for a specific Story always lives in the `SequenceView` ViewVersion that pins it (and transitively the `Story.ScriptView` ViewVersion that pins the SequenceView). The same `ScriptPiece` can be endorsed in Story A's assembly and not in Story B's — the tag (when introduced) records production state; the ViewVersion records curatorial intent. *MVP note: tag state is deferred — see the Pieces section above.*
 
 ---
 
