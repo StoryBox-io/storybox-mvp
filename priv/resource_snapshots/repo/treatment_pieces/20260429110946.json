@@ -91,16 +91,16 @@
           "global": null,
           "strategy": null
         },
-        "name": "sequence_versions_sequence_piece_id_fkey",
+        "name": "treatment_pieces_treatment_view_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
         "schema": "public",
-        "table": "sequence_pieces"
+        "table": "treatment_views"
       },
       "scale": null,
       "size": null,
-      "source": "sequence_piece_id",
+      "source": "treatment_view_id",
       "type": "uuid"
     }
   ],
@@ -110,7 +110,7 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "D66039EEC8712BED0C2DE6058A3B7D80A9B156832ACDEBBBA7EE7CAC6E6227F3",
+  "hash": "A0CD2A60689D8F3F27700646A8BC7CB674220A002F42A0C2D2845D1E8075322F",
   "identities": [],
   "multitenancy": {
     "attribute": null,
@@ -119,5 +119,5 @@
   },
   "repo": "Elixir.Storybox.Repo",
   "schema": null,
-  "table": "sequence_versions"
+  "table": "treatment_pieces"
 }

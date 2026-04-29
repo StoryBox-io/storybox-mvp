@@ -21,7 +21,7 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "title",
+      "source": "content_uri",
       "type": "text"
     },
     {
@@ -33,20 +33,32 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "position",
+      "source": "version_number",
       "type": "bigint"
     },
     {
       "allow_nil?": true,
-      "default": "nil",
+      "default": "%{}",
       "generated?": false,
       "precision": null,
       "primary_key?": false,
       "references": null,
       "scale": null,
       "size": null,
-      "source": "approved_version_id",
-      "type": "uuid"
+      "source": "weights",
+      "type": "map"
+    },
+    {
+      "allow_nil?": false,
+      "default": "\"current\"",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "upstream_status",
+      "type": "text"
     },
     {
       "allow_nil?": false,
@@ -58,18 +70,6 @@
       "scale": null,
       "size": null,
       "source": "inserted_at",
-      "type": "utc_datetime_usec"
-    },
-    {
-      "allow_nil?": false,
-      "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "updated_at",
       "type": "utc_datetime_usec"
     },
     {
@@ -91,16 +91,16 @@
           "global": null,
           "strategy": null
         },
-        "name": "scene_pieces_sequence_piece_id_fkey",
+        "name": "script_pieces_script_view_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
         "schema": "public",
-        "table": "sequence_pieces"
+        "table": "script_views"
       },
       "scale": null,
       "size": null,
-      "source": "sequence_piece_id",
+      "source": "script_view_id",
       "type": "uuid"
     }
   ],
@@ -110,7 +110,7 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "028A3D4517D95D96D4C7837E9638727771738FB6B322BDC40E5A5380A062C702",
+  "hash": "4A29E902FB737716391D052F13CC5EA6C7131A55381835AD4B0DBA19C7BF71D4",
   "identities": [],
   "multitenancy": {
     "attribute": null,
@@ -119,5 +119,5 @@
   },
   "repo": "Elixir.Storybox.Repo",
   "schema": null,
-  "table": "scene_pieces"
+  "table": "script_pieces"
 }

@@ -103,7 +103,7 @@
           "global": null,
           "strategy": null
         },
-        "name": "sequence_pieces_story_id_fkey",
+        "name": "treatment_views_story_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
@@ -122,7 +122,7 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "3A5F4359E23922EA9ED41653B3F7B1B2420B817B02F6721B01C5ED7E80ED146B",
+  "hash": "4DF0BE95655448E7061258638A71C9CC16B51A38491EBA952DAC07183B3994DD",
   "identities": [],
   "multitenancy": {
     "attribute": null,
@@ -131,5 +131,5 @@
   },
   "repo": "Elixir.Storybox.Repo",
   "schema": null,
-  "table": "sequence_pieces"
+  "table": "treatment_views"
 }
