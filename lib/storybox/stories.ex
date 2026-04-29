@@ -5,6 +5,7 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.Story
     resource Storybox.Stories.Character
     resource Storybox.Stories.Sequence
+    resource Storybox.Stories.Segment
     resource Storybox.Stories.World
     resource Storybox.Stories.SynopsisView
     resource Storybox.Stories.TreatmentView
