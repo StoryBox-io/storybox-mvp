@@ -67,7 +67,7 @@
           "global": null,
           "strategy": null
         },
-        "name": "synopsis_versions_story_id_fkey",
+        "name": "synopsis_views_story_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
@@ -86,7 +86,7 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "183C01507D46139153D524B6F2A4B15C0FAB9C3D0EB9AD526CC044D387AA8C18",
+  "hash": "1F48062AAF5A364D133A1763E3D848EB9768221D781879364B33F1D69BFCB580",
   "identities": [],
   "multitenancy": {
     "attribute": null,
@@ -95,5 +95,5 @@
   },
   "repo": "Elixir.Storybox.Repo",
   "schema": null,
-  "table": "synopsis_versions"
+  "table": "synopsis_views"
 }

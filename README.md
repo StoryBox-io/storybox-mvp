@@ -103,7 +103,7 @@ POST /api/stories/:id/views/script/scenes/:scene_id/versions
 ## Dev Setup
 
 ```bash
-podman-compose up -d
+podman compose -f podman-compose.yml up -d
 ```
 
 Services: `app` (Phoenix on :4000), `db` (PostgreSQL on :5432), `minio` (S3 on :9000, console on :9001).

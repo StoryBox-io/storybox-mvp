@@ -2,13 +2,13 @@
 
 ## Prerequisites
 
-- [Podman](https://podman.io/) + podman-compose
+- [Podman](https://podman.io/) v5+ (the built-in `podman compose` subcommand replaces the legacy `podman-compose` Python wrapper; commands below pass `-f podman-compose.yml` because the file uses that name rather than the default `compose.yml`)
 - (The Elixir app runs inside the container — no local Elixir install needed)
 
 ## Start Services
 
 ```bash
-podman-compose up -d
+podman compose -f podman-compose.yml up -d
 ```
 
 This starts three services:
@@ -40,8 +40,8 @@ password: storybox
 ## App Setup (once scaffolded)
 
 ```bash
-podman-compose run app mix setup
-podman-compose run app mix phx.server
+podman compose -f podman-compose.yml run app mix setup
+podman compose -f podman-compose.yml run app mix phx.server
 ```
 
 ## Environment Variables
