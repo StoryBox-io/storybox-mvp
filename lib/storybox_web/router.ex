@@ -32,9 +32,6 @@ defmodule StoryboxWeb.Router do
       on_mount: AshAuthentication.Phoenix.LiveSession do
       live "/", StoryListLive
       live "/stories/:story_id", StoryOverviewLive
-      live "/stories/:story_id/treatment", TreatmentLive
-      live "/stories/:story_id/sequences/:sequence_id/script", ScriptLive
-      live "/stories/:story_id/scenes/:scene_id/compare", SceneCompareLive
     end
   end
 
@@ -49,12 +46,8 @@ defmodule StoryboxWeb.Router do
 
     get "/stories/:story_id/ping", ApiController, :ping
     get "/stories/:story_id/views/synopsis", ApiController, :synopsis_view
-    get "/stories/:story_id/views/treatment", ApiController, :treatment_view
-    get "/stories/:story_id/views/treatment/diff", ApiController, :treatment_diff
     get "/stories/:story_id/views/script", ApiController, :script_view
-    get "/stories/:story_id/sequences/:id", ApiController, :sequence_detail
     get "/stories/:story_id/upstream_changes", ApiController, :upstream_changes
-    post "/stories/:story_id/sequences/:id/versions", ApiController, :create_sequence_version
     post "/stories/:story_id/scenes/:id/versions", ApiController, :create_scene_version
   end
 

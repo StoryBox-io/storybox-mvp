@@ -16,34 +16,16 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
       |> Ash.Changeset.for_create(:create, %{title: "Test Story", user_id: user.id})
       |> Ash.create()
 
-    {:ok, treatment_view} =
-      Storybox.Stories.TreatmentView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Act 1",
-        position: 1,
-        story_id: story.id
-      })
-      |> Ash.create()
-
-    make_scene = fn title, position ->
+    make_scene = fn title ->
       {:ok, scene} =
         Storybox.Stories.Scene
         |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
         |> Ash.create()
 
-      {:ok, _tvs} =
-        Storybox.Stories.TreatmentViewScene
-        |> Ash.Changeset.for_create(:create, %{
-          treatment_view_id: treatment_view.id,
-          scene_id: scene.id,
-          position: position
-        })
-        |> Ash.create()
-
       scene
     end
 
-    %{story: story, treatment_view: treatment_view, make_scene: make_scene}
+    %{story: story, make_scene: make_scene}
   end
 
   describe "create" do
@@ -115,8 +97,8 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
       story: story,
       make_scene: make_scene
     } do
-      scene1 = make_scene.("Scene 1", 1)
-      scene2 = make_scene.("Scene 2", 2)
+      scene1 = make_scene.("Scene 1")
+      scene2 = make_scene.("Scene 2")
 
       {:ok, view1} =
         Storybox.Stories.ScriptView
@@ -173,8 +155,8 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
       story: story,
       make_scene: make_scene
     } do
-      scene_approved = make_scene.("Approved Scene", 1)
-      scene_unapproved = make_scene.("Unapproved Scene", 2)
+      scene_approved = make_scene.("Approved Scene")
+      scene_unapproved = make_scene.("Unapproved Scene")
 
       {:ok, view_approved} =
         Storybox.Stories.ScriptView

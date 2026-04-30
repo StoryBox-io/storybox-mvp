@@ -21,19 +21,7 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "title",
-      "type": "text"
-    },
-    {
-      "allow_nil?": true,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "act",
+      "source": "content_uri",
       "type": "text"
     },
     {
@@ -45,20 +33,32 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "position",
+      "source": "version_number",
       "type": "bigint"
     },
     {
       "allow_nil?": true,
-      "default": "nil",
+      "default": "%{}",
       "generated?": false,
       "precision": null,
       "primary_key?": false,
       "references": null,
       "scale": null,
       "size": null,
-      "source": "approved_version_id",
-      "type": "uuid"
+      "source": "weights",
+      "type": "map"
+    },
+    {
+      "allow_nil?": false,
+      "default": "\"current\"",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "upstream_status",
+      "type": "text"
     },
     {
       "allow_nil?": false,
@@ -74,45 +74,14 @@
     },
     {
       "allow_nil?": false,
-      "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
+      "default": "nil",
       "generated?": false,
       "precision": null,
       "primary_key?": false,
       "references": null,
       "scale": null,
       "size": null,
-      "source": "updated_at",
-      "type": "utc_datetime_usec"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": {
-        "deferrable": false,
-        "destination_attribute": "id",
-        "destination_attribute_default": null,
-        "destination_attribute_generated": null,
-        "index?": false,
-        "match_type": null,
-        "match_with": null,
-        "multitenancy": {
-          "attribute": null,
-          "global": null,
-          "strategy": null
-        },
-        "name": "treatment_views_story_id_fkey",
-        "on_delete": null,
-        "on_update": null,
-        "primary_key?": true,
-        "schema": "public",
-        "table": "stories"
-      },
-      "scale": null,
-      "size": null,
-      "source": "story_id",
+      "source": "treatment_view_id",
       "type": "uuid"
     }
   ],
@@ -122,7 +91,7 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "4DF0BE95655448E7061258638A71C9CC16B51A38491EBA952DAC07183B3994DD",
+  "hash": "29BB84482485B8099FF780EF47CCA7F01405C6D5AE3CBA98BD772E92C42D242E",
   "identities": [],
   "multitenancy": {
     "attribute": null,
@@ -131,5 +100,5 @@
   },
   "repo": "Elixir.Storybox.Repo",
   "schema": null,
-  "table": "treatment_views"
+  "table": "treatment_pieces"
 }

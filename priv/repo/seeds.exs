@@ -199,418 +199,221 @@ if little_witch = all_stories["Little Witch"] do
     IO.puts("  Created synopsis v1 for Little Witch")
   end
 
-  # -- Sequence pieces (TreatmentViews) + versions (TreatmentPieces) ---------
+  # -- Scene entities + ScriptViews + ScriptPieces ----------------------------
+  # Five scenes seeded directly under the story (no slot intermediary).
+  # The final scene has no script version — demonstrates unresolvable → Task.
 
-  existing_sequence_count =
-    Storybox.Stories.TreatmentView
+  existing_scene_count =
+    Storybox.Stories.Scene
     |> Ash.Query.filter(story_id == ^little_witch.id)
     |> Ash.read!(authorize?: false)
     |> length()
 
-  if existing_sequence_count == 0 do
-    sequences = [
-      {1, "Prologue — The Forest Road", "Prologue",
-       """
-       Years before the story begins. A forest road at dusk. The Alderman's soldiers hunt Order remnants. Silas — a former Order member living in hiding — intervenes to protect a family and reveals who she was before. She acts with full training, borrows fire from the Book once, and registers the cost immediately. The family is dead. A small girl is left alone in the road. Silas takes her home. The question of what she saw in that moment sits in the prologue like an ember. It will not be answered here.
-       """},
-      {2, "The Cottage", "Act I",
-       """
-       The cottage has become two people's life. Silas has taught Fleur the identification of herbs, the treatment of wounds, the patience of sitting with the sick. Fleur is capable — and restless in a way she can't name. She has heard the Chosen One whispers her whole life. Silas has redirected, gently, consistently, for years.
-
-       The Alderman's soldiers arrive. Silas is calm in the way of someone who has been half-expecting this for a decade. She presses the chest key into Fleur's hands: "Hide. Do good. Never touch the Book." She holds Fleur's face — and then says the thing she has been unable to say: "You are what I should have been."
-
-       She walks out to meet the soldiers. Fleur is left alone in the empty cottage with a key in her hand.
-       """},
-      {3, "The Summoning", "Act I",
-       """
-       Fleur sits with the key for a long time. She turns over Silas's last words and finds a crack in them. She opens the chest. She takes out the Book. The fire stirs before she says the words.
-
-       She attempts the summoning. It goes catastrophically wrong. The fire takes the cottage. In the ash and rain a diminished Flame Demon lies trapped. He looks up at Fleur and says: "There you are. I've been looking for you." He does not invent her hope. He locates it and feeds it.
-
-       Fleur puts him in the iron lantern. She walks away from the burning cottage toward the road.
-       """},
-      {4, "Settling — Silas's Way", "Act II",
-       """
-       Fleur enters the capital with nothing but the lantern. She does what Silas taught her. She tends wounds, sets bones, grinds herbs. Slow, invisible work. She builds a community through presence — not spectacle.
-
-       But the work is slow, and Fleur is afraid. The demon whispers: let me help. Just enough to make her healing look like mundane skill. No one will suspect.
-
-       Fleur accepts. The first shortcut. It works. The pattern is set. Each time Fleur leans on the demon, the honest work gets smaller and his influence grows.
-       """},
-      {5, "Kestrel's Game", "Act II",
-       """
-       The Alderman notices Fleur's half-gestures of trained craft. Rather than burning her, he pauses — a desperate young witch could be useful. He gives her access to the sick, the poor, even the prisoners. His real intention: to parade her before Kestrel.
-
-       In the dungeon, Kestrel reads Silas in Fleur's training gaps — and makes a bitter, wrong reading: Silas took the Book, found an heir, built a private lineage. She tips off the Alderman about the demon, redirecting his plan toward a coronation. Then she works Fleur — filling the void Silas left, weaponising the truth about Silas's flight to crack Fleur's faith. She steers Fleur toward the fire the same way the war once steered her. She knows what she is doing. She does it anyway.
-       """},
-      {6, "The Tug of War", "Act II",
-       """
-       The Alderman grooms Fleur for the coronation — the Chosen One crowned as Solar Queen, his dynasty legitimised. Kestrel advises from behind bars, positioning herself as counterweight while steering Fleur toward the demon. The demon grows. Each shortcut felt reasonable at the time.
-
-       Fleur walks into the coronation with her eyes open, believing she can save the community she built through honest work. The demon surges. Fleur loses control. The city burns. The prophecy is revealed as hollow. There is only destruction, and Fleur put it there.
-       """}
-    ]
-
-    for {position, title, act, content} <- sequences do
-      {:ok, seq} =
-        Storybox.Stories.TreatmentView
+  if existing_scene_count == 0 do
+    seed_scene = fn story_id, title, content ->
+      {:ok, scene} =
+        Storybox.Stories.Scene
         |> Ash.Changeset.for_create(:create, %{
           title: title,
-          act: act,
-          position: position,
-          story_id: little_witch.id
+          story_id: story_id
         })
         |> Ash.create(authorize?: false)
 
-      uri = Storybox.Storage.uri_for_sequence(little_witch.id, seq.id, 1)
-      Storybox.Storage.put_content(uri, String.trim(content))
-
-      {:ok, v1} =
-        Storybox.Stories.TreatmentPiece
+      {:ok, script_view} =
+        Storybox.Stories.ScriptView
         |> Ash.Changeset.for_create(:create, %{
-          treatment_view_id: seq.id,
-          content_uri: uri,
-          version_number: 1,
-          upstream_status: :current,
-          weights: %{"preference" => 0.8, "theme" => 0.7}
+          title: title,
+          scene_id: scene.id
         })
         |> Ash.create(authorize?: false)
 
-      seq
-      |> Ash.Changeset.for_update(:approve_version, %{version_id: v1.id})
-      |> Ash.update!(authorize?: false)
+      if content do
+        uri = Storybox.Storage.uri_for_scene(story_id, script_view.id, 1)
+        Storybox.Storage.put_content(uri, String.trim(content))
+
+        {:ok, v1} =
+          Storybox.Stories.ScriptPiece
+          |> Ash.Changeset.for_create(:create, %{
+            script_view_id: script_view.id,
+            content_uri: uri,
+            version_number: 1,
+            upstream_status: :current,
+            weights: %{"preference" => 0.9, "theme" => 0.8}
+          })
+          |> Ash.create(authorize?: false)
+
+        script_view
+        |> Ash.Changeset.for_update(:approve_version, %{version_id: v1.id})
+        |> Ash.update!(authorize?: false)
+      end
+
+      {scene, script_view}
     end
 
-    # Reckoning — two versions: v1 approved (earlier draft), v2 stale (V3 ending)
-    # Demonstrates: approved version + newer upstream version = staleness signal
-    {:ok, reckoning} =
-      Storybox.Stories.TreatmentView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Reckoning — Kestrel's Choice",
-        act: "Act III",
-        position: 7,
-        story_id: little_witch.id
-      })
-      |> Ash.create(authorize?: false)
+    scenes = [
+      {"INT. COTTAGE - NIGHT",
+       """
+       INT. COTTAGE - NIGHT
 
-    reckoning_v1_uri = Storybox.Storage.uri_for_sequence(little_witch.id, reckoning.id, 1)
+       The cottage is dark. FLEUR stands at the chest, key in hand.
 
-    Storybox.Storage.put_content(reckoning_v1_uri, """
-    The city is burning. The demon is loose. Fleur stands in the wreckage of everything she believed.
+       She has been standing here a long time.
 
-    But Silas's training holds. Fleur puts herself between the fire and the people — not with power, but with her body. She does not stop.
+       She opens the chest. Lifts out the BOOK OF DEMONS.
 
-    Kestrel watches and makes her choice. She reaches into the fire and contains the demon using the full discipline she was trained for. It costs her.
+       It is heavy and old and warm in a way that stone should not be warm.
 
-    The demon is sealed. Kestrel is diminished. The Alderman's ceremony is over.
+       The fire in the hearth shifts toward her.
 
-    Fleur stands at the beginning of her real training.
+       FLEUR
+       (to herself)
+       I'm just looking.
+
+       She opens the cover. Turns to the first page.
+
+       The hearth fire doubles.
+
+       Fleur does not close the Book.
+       """},
+      {"EXT. COTTAGE - NIGHT",
+       """
+       EXT. COTTAGE - NIGHT
+
+       Fire. The cottage burns from the inside out.
+
+       FLEUR stands in the yard, hands raised, trying to unsay something.
+
+       The herbs. The medicines. The chest. Years of Silas.
+
+       All of it burning.
+
+       She cannot stop it. She does not move.
+
+       The fire crests the roof. Sparks rise into the dark.
+
+       A long beat. Rain begins.
+
+       The fire and the rain fight each other.
+
+       Fleur is still standing there when the rain wins.
+       """},
+      {"EXT. RUINS - DAWN",
+       """
+       EXT. RUINS - DAWN
+
+       Ash and water. The cottage is a shell. Rain has kept the fire from spreading.
+
+       The FLAME DEMON lies trapped in a hollow at the base of the ruined hearth, held by the pooling water. He is small. Diminished.
+
+       He looks up at FLEUR.
+
+       A long beat.
+
+       FLAME DEMON
+       There you are. I've been looking for you.
+
+       FLEUR
+       You burned my house.
+
+       FLAME DEMON
+       (gently)
+       You opened the Book.
+
+       Fleur looks at the lantern in her hand. She looks at the demon.
+
+       She opens the lantern.
+
+       He flows into it like heat rising. The lantern brightens once — then settles.
+
+       Fleur closes it. Holds it.
+
+       She starts walking toward the road.
+       """},
+      {"EXT. CORONATION SQUARE - NIGHT",
+       """
+       EXT. CORONATION SQUARE - NIGHT
+
+       The city is burning. Crowds flee in every direction. The Alderman's ceremony has dissolved into ash and screaming.
+
+       The FLAME DEMON is loose in the fire — visible as something that moves against the wind, that chooses where it burns.
+
+       FLEUR stands at the edge of the square. The lantern is empty.
+
+       She has nothing.
+
+       She walks toward the flames.
+
+       She pulls a WOMAN from a burning doorway.
+
+       She runs back out.
+
+       She goes again.
+
+       KESTREL watches from across the square. Still. Reading.
+
+       Fleur's sleeve catches. She beats it out without stopping. Pulls a CHILD from beneath a fallen beam. Carries him.
+
+       She goes back.
+
+       Her face is wrong — one side of it, from the heat. She does not stop.
+
+       Kestrel watches.
+
+       The calculation breaks.
+       """},
+      # Scene 5 — no script version (unresolvable → Task)
+      {"EXT. RUINS — KESTREL'S CHOICE", nil}
+    ]
+
+    [{cottage_scene, cottage_script_view} | _rest] =
+      for {title, content} <- scenes do
+        seed_scene.(little_witch.id, title, content)
+      end
+
+    # Add a v2 to the first scene (cottage) so snapshot/diff tests have something to compare.
+    # v1 stays approved; v2 is unapproved.
+    v2_uri = Storybox.Storage.uri_for_scene(little_witch.id, cottage_script_view.id, 2)
+
+    Storybox.Storage.put_content(v2_uri, """
+    INT. COTTAGE - NIGHT
+
+    The cottage is dark. FLEUR stands at the chest, key in hand. She has not moved in an hour.
+
+    The hearth fire watches her. She knows it is watching.
+
+    FLEUR
+    (quietly, not to herself)
+    I know you're there.
+
+    The fire shifts. Not a flare — a lean.
+
+    She turns the key. Lifts the BOOK OF DEMONS out of the chest. It is heavier than she remembers.
+
+    She does not open it yet. She sets it on the table and looks at it.
+
+    FLEUR (CONT'D)
+    Silas said never. She didn't say why.
+
+    A long beat. The fire leans further.
+
+    Fleur opens the cover.
     """)
 
-    {:ok, reckoning_v1} =
-      Storybox.Stories.TreatmentPiece
+    {:ok, _v2} =
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        treatment_view_id: reckoning.id,
-        content_uri: reckoning_v1_uri,
-        version_number: 1,
-        upstream_status: :current,
-        weights: %{"preference" => 0.6, "theme" => 0.5}
-      })
-      |> Ash.create(authorize?: false)
-
-    # Approve v1
-    reckoning
-    |> Ash.Changeset.for_update(:approve_version, %{version_id: reckoning_v1.id})
-    |> Ash.update!(authorize?: false)
-
-    reckoning_v2_uri = Storybox.Storage.uri_for_sequence(little_witch.id, reckoning.id, 2)
-
-    Storybox.Storage.put_content(reckoning_v2_uri, """
-    The city is burning. The demon is loose. Fleur stands in the wreckage of everything she believed.
-
-    But Fleur does not collapse. In the worst moment of her life, Silas's teaching reasserts itself — not the knowledge Silas withheld, but the lesson she gave every day without words. Fleur gives everything she has to shield the townsfolk — with her body, her hands, her voice. Her face and arm are seared. She does not stop.
-
-    Kestrel sees Fleur in the fire and the calculation breaks. She recognises what she has done — specifically, not in the abstract. She reaches into the fire and contains the demon at full cost. Then she tells Fleur the truth: there is no Chosen One. There never was. The Alderman made it up. The demon used it. Kestrel used it. The only power that is real is the kind you earn — slowly, painfully, with no guarantee of success. What Fleur did in the fire was real. Not because it was special. Because it was work.
-
-    The demon is sealed back in the lantern. Kestrel is diminished — perhaps dying, perhaps simply spent. The Alderman's political machinery grinds on. The world has not been saved by a single act of fire. What has changed is Fleur.
-    """)
-
-    {:ok, _reckoning_v2} =
-      Storybox.Stories.TreatmentPiece
-      |> Ash.Changeset.for_create(:create, %{
-        treatment_view_id: reckoning.id,
-        content_uri: reckoning_v2_uri,
+        script_view_id: cottage_script_view.id,
+        content_uri: v2_uri,
         version_number: 2,
-        upstream_status: :stale,
+        upstream_status: :current,
         weights: %{}
       })
       |> Ash.create(authorize?: false)
 
-    IO.puts("  Created 7 treatment views for Little Witch (reckoning has v1 approved + v2 stale)")
-  end
-
-  # -- Scene entities + ScriptViews + ScriptPieces ----------------------------
-  # Scenes are seeded under two sequences: Summoning (3 scenes) and Reckoning (2 scenes).
-  # The final Reckoning scene has no version — demonstrates unresolvable view → Task.
-
-  summoning =
-    Storybox.Stories.TreatmentView
-    |> Ash.Query.filter(story_id == ^little_witch.id and title == "The Summoning")
-    |> Ash.read_one!(authorize?: false)
-
-  reckoning =
-    Storybox.Stories.TreatmentView
-    |> Ash.Query.filter(story_id == ^little_witch.id and title == "Reckoning — Kestrel's Choice")
-    |> Ash.read_one!(authorize?: false)
-
-  seed_scene = fn story_id, treatment_view_id, position, title, content ->
-    {:ok, scene} =
-      Storybox.Stories.Scene
-      |> Ash.Changeset.for_create(:create, %{
-        title: title,
-        story_id: story_id
-      })
-      |> Ash.create(authorize?: false)
-
-    Storybox.Stories.TreatmentViewScene
-    |> Ash.Changeset.for_create(:create, %{
-      treatment_view_id: treatment_view_id,
-      scene_id: scene.id,
-      position: position
-    })
-    |> Ash.create!(authorize?: false)
-
-    {:ok, script_view} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{
-        title: title,
-        scene_id: scene.id
-      })
-      |> Ash.create(authorize?: false)
-
-    if content do
-      uri = Storybox.Storage.uri_for_scene(story_id, script_view.id, 1)
-      Storybox.Storage.put_content(uri, String.trim(content))
-
-      {:ok, v1} =
-        Storybox.Stories.ScriptPiece
-        |> Ash.Changeset.for_create(:create, %{
-          script_view_id: script_view.id,
-          content_uri: uri,
-          version_number: 1,
-          upstream_status: :current,
-          weights: %{"preference" => 0.9, "theme" => 0.8}
-        })
-        |> Ash.create(authorize?: false)
-
-      script_view
-      |> Ash.Changeset.for_update(:approve_version, %{version_id: v1.id})
-      |> Ash.update!(authorize?: false)
-    end
-
-    scene
-  end
-
-  if summoning do
-    existing_summoning_tvscenes =
-      Storybox.Stories.TreatmentViewScene
-      |> Ash.Query.filter(treatment_view_id == ^summoning.id)
-      |> Ash.read!(authorize?: false)
-      |> length()
-
-    if existing_summoning_tvscenes == 0 do
-      summoning_scenes = [
-        {1, "INT. COTTAGE - NIGHT",
-         """
-         INT. COTTAGE - NIGHT
-
-         The cottage is dark. FLEUR stands at the chest, key in hand.
-
-         She has been standing here a long time.
-
-         She opens the chest. Lifts out the BOOK OF DEMONS.
-
-         It is heavy and old and warm in a way that stone should not be warm.
-
-         The fire in the hearth shifts toward her.
-
-         FLEUR
-         (to herself)
-         I'm just looking.
-
-         She opens the cover. Turns to the first page.
-
-         The hearth fire doubles.
-
-         Fleur does not close the Book.
-         """},
-        {2, "EXT. COTTAGE - NIGHT",
-         """
-         EXT. COTTAGE - NIGHT
-
-         Fire. The cottage burns from the inside out.
-
-         FLEUR stands in the yard, hands raised, trying to unsay something.
-
-         The herbs. The medicines. The chest. Years of Silas.
-
-         All of it burning.
-
-         She cannot stop it. She does not move.
-
-         The fire crests the roof. Sparks rise into the dark.
-
-         A long beat. Rain begins.
-
-         The fire and the rain fight each other.
-
-         Fleur is still standing there when the rain wins.
-         """},
-        {3, "EXT. RUINS - DAWN",
-         """
-         EXT. RUINS - DAWN
-
-         Ash and water. The cottage is a shell. Rain has kept the fire from spreading.
-
-         The FLAME DEMON lies trapped in a hollow at the base of the ruined hearth, held by the pooling water. He is small. Diminished.
-
-         He looks up at FLEUR.
-
-         A long beat.
-
-         FLAME DEMON
-         There you are. I've been looking for you.
-
-         FLEUR
-         You burned my house.
-
-         FLAME DEMON
-         (gently)
-         You opened the Book.
-
-         Fleur looks at the lantern in her hand. She looks at the demon.
-
-         She opens the lantern.
-
-         He flows into it like heat rising. The lantern brightens once — then settles.
-
-         Fleur closes it. Holds it.
-
-         She starts walking toward the road.
-         """}
-      ]
-
-      for {position, title, content} <- summoning_scenes do
-        seed_scene.(little_witch.id, summoning.id, position, title, content)
-      end
-
-      # Add a v2 to the first Summoning scene so the Compare page has something to show.
-      # v1 stays approved; v2 is unapproved so Approve can be exercised.
-      first_scene_view =
-        Storybox.Stories.ScriptView
-        |> Ash.Query.filter(title == "INT. COTTAGE - NIGHT")
-        |> Ash.read_one!(authorize?: false)
-
-      v2_uri = Storybox.Storage.uri_for_scene(little_witch.id, first_scene_view.id, 2)
-
-      Storybox.Storage.put_content(v2_uri, """
-      INT. COTTAGE - NIGHT
-
-      The cottage is dark. FLEUR stands at the chest, key in hand. She has not moved in an hour.
-
-      The hearth fire watches her. She knows it is watching.
-
-      FLEUR
-      (quietly, not to herself)
-      I know you're there.
-
-      The fire shifts. Not a flare — a lean.
-
-      She turns the key. Lifts the BOOK OF DEMONS out of the chest. It is heavier than she remembers.
-
-      She does not open it yet. She sets it on the table and looks at it.
-
-      FLEUR (CONT'D)
-      Silas said never. She didn't say why.
-
-      A long beat. The fire leans further.
-
-      Fleur opens the cover.
-      """)
-
-      {:ok, _v2} =
-        Storybox.Stories.ScriptPiece
-        |> Ash.Changeset.for_create(:create, %{
-          script_view_id: first_scene_view.id,
-          content_uri: v2_uri,
-          version_number: 2,
-          upstream_status: :current,
-          weights: %{}
-        })
-        |> Ash.create(authorize?: false)
-
-      IO.puts("  Created 3 scenes for The Summoning (cottage scene has v1 approved + v2 draft)")
-    end
-  end
-
-  if reckoning do
-    existing_reckoning_tvscenes =
-      Storybox.Stories.TreatmentViewScene
-      |> Ash.Query.filter(treatment_view_id == ^reckoning.id)
-      |> Ash.read!(authorize?: false)
-      |> length()
-
-    if existing_reckoning_tvscenes == 0 do
-      seed_scene.(
-        little_witch.id,
-        reckoning.id,
-        1,
-        "EXT. CORONATION SQUARE - NIGHT",
-        """
-        EXT. CORONATION SQUARE - NIGHT
-
-        The city is burning. Crowds flee in every direction. The Alderman's ceremony has dissolved into ash and screaming.
-
-        The FLAME DEMON is loose in the fire — visible as something that moves against the wind, that chooses where it burns.
-
-        FLEUR stands at the edge of the square. The lantern is empty.
-
-        She has nothing.
-
-        She walks toward the flames.
-
-        She pulls a WOMAN from a burning doorway.
-
-        She runs back out.
-
-        She goes again.
-
-        KESTREL watches from across the square. Still. Reading.
-
-        Fleur's sleeve catches. She beats it out without stopping. Pulls a CHILD from beneath a fallen beam. Carries him.
-
-        She goes back.
-
-        Her face is wrong — one side of it, from the heat. She does not stop.
-
-        Kestrel watches.
-
-        The calculation breaks.
-        """
-      )
-
-      # Scene 2 — Kestrel's choice (NO script version — unresolvable → Task)
-      seed_scene.(
-        little_witch.id,
-        reckoning.id,
-        2,
-        "EXT. RUINS — KESTREL'S CHOICE",
-        nil
-      )
-
-      IO.puts(
-        "  Created 2 scenes for Reckoning (1 with approved script, 1 empty — unresolvable → Task)"
-      )
-    end
+    _ = cottage_scene
+
+    IO.puts(
+      "  Created 5 scenes for Little Witch (cottage has v1 approved + v2 draft; last scene empty)"
+    )
   end
 end

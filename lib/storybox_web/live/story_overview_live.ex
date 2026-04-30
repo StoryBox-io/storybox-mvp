@@ -73,12 +73,6 @@ defmodule StoryboxWeb.StoryOverviewLive do
           <.link navigate={~p"/"} class="text-sm text-base-content/60 hover:text-base-content">
             ← Back to stories
           </.link>
-          <.link
-            navigate={~p"/stories/#{@story.id}/treatment"}
-            class="text-sm text-base-content/60 hover:text-base-content"
-          >
-            View Treatment →
-          </.link>
         </div>
 
         <div class="space-y-2">

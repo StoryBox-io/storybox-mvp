@@ -16,36 +16,9 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       |> Ash.Changeset.for_create(:create, %{title: "Test Story", user_id: user.id})
       |> Ash.create()
 
-    {:ok, treatment_view} =
-      Storybox.Stories.TreatmentView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Act 1",
-        position: 1,
-        story_id: story.id
-      })
-      |> Ash.create()
-
-    {:ok, treatment_piece} =
-      Storybox.Stories.TreatmentPiece
-      |> Ash.Changeset.for_create(:create, %{
-        treatment_view_id: treatment_view.id,
-        content_uri: "storybox://stories/#{story.id}/sequences/#{treatment_view.id}/v1",
-        version_number: 1
-      })
-      |> Ash.create()
-
     {:ok, scene} =
       Storybox.Stories.Scene
       |> Ash.Changeset.for_create(:create, %{title: "Scene 1", story_id: story.id})
-      |> Ash.create()
-
-    {:ok, _tvs} =
-      Storybox.Stories.TreatmentViewScene
-      |> Ash.Changeset.for_create(:create, %{
-        treatment_view_id: treatment_view.id,
-        scene_id: scene.id,
-        position: 1
-      })
       |> Ash.create()
 
     {:ok, script_view} =
@@ -58,6 +31,17 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       |> Ash.Changeset.for_create(:create, %{
         script_view_id: script_view.id,
         content_uri: "storybox://stories/#{story.id}/scenes/#{script_view.id}/v1",
+        version_number: 1
+      })
+      |> Ash.create()
+
+    # TreatmentPiece still exists as an orphaned resource; provide a synthetic UUID
+    # for treatment_view_id (no FK constraint after migration).
+    {:ok, treatment_piece} =
+      Storybox.Stories.TreatmentPiece
+      |> Ash.Changeset.for_create(:create, %{
+        treatment_view_id: Ash.UUID.generate(),
+        content_uri: "storybox://stories/#{story.id}/sequences/synthetic/v1",
         version_number: 1
       })
       |> Ash.create()
