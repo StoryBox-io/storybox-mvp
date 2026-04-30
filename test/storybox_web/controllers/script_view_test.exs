@@ -3,12 +3,12 @@ defmodule StoryboxWeb.ScriptViewTest do
 
   alias Storybox.Accounts.ApiToken
 
-  # Shared setup creates the following structure:
+  # Shared setup creates the following structure (no slot intermediary):
   #
-  #   story → tv_1 (Act I) → sv_1 → sp_v1 (EXT. PARK...), sp_v2 (INT. OFFICE...) ★ approved
-  #                         → sv_2 → sp_v3 (EXT. STREET...)   no approved version
-  #         → tv_2 (Act II) → sv_3 → sp_v4 (INT. KITCHEN...) ★ approved
-  #                          → sv_4   (no versions)
+  #   story → sv_1 (Cold open) → sp_v1 (EXT. PARK...), sp_v2 (INT. OFFICE...) ★ approved
+  #         → sv_2 (Inciting incident) → sp_v3 (EXT. STREET...)   no approved version
+  #         → sv_3 (The argument) → sp_v4 (INT. KITCHEN...) ★ approved
+  #         → sv_4 (Aftermath)   (no versions)
   #   snapshot: entries = {sv_1 → sp_v1}  (pins sv_1 to old v1; others not listed)
   #   other_story: for token isolation tests
 
@@ -38,39 +38,10 @@ defmodule StoryboxWeb.ScriptViewTest do
 
     {:ok, raw_token, _} = ApiToken.generate(%{story_id: story.id, user_id: user.id})
 
-    {:ok, tv_1} =
-      Storybox.Stories.TreatmentView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Opening",
-        act: "Act I",
-        position: 1,
-        story_id: story.id
-      })
-      |> Ash.create(authorize?: false)
-
-    {:ok, tv_2} =
-      Storybox.Stories.TreatmentView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Confrontation",
-        act: "Act II",
-        position: 1,
-        story_id: story.id
-      })
-      |> Ash.create(authorize?: false)
-
-    make_sv = fn tv_id, title, position ->
+    make_sv = fn title ->
       {:ok, scene} =
         Storybox.Stories.Scene
         |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
-        |> Ash.create(authorize?: false)
-
-      {:ok, _tvs} =
-        Storybox.Stories.TreatmentViewScene
-        |> Ash.Changeset.for_create(:create, %{
-          treatment_view_id: tv_id,
-          scene_id: scene.id,
-          position: position
-        })
         |> Ash.create(authorize?: false)
 
       {:ok, sv} =
@@ -81,10 +52,10 @@ defmodule StoryboxWeb.ScriptViewTest do
       sv
     end
 
-    sv_1 = make_sv.(tv_1.id, "Cold open", 1)
-    sv_2 = make_sv.(tv_1.id, "Inciting incident", 2)
-    sv_3 = make_sv.(tv_2.id, "The argument", 1)
-    sv_4 = make_sv.(tv_2.id, "Aftermath", 2)
+    sv_1 = make_sv.("Cold open")
+    sv_2 = make_sv.("Inciting incident")
+    sv_3 = make_sv.("The argument")
+    sv_4 = make_sv.("Aftermath")
 
     {:ok, sp_v1} =
       Storybox.Stories.ScriptView
@@ -107,7 +78,7 @@ defmodule StoryboxWeb.ScriptViewTest do
       |> Ash.Changeset.for_update(:approve_version, %{version_id: sp_v2.id})
       |> Ash.update(authorize?: false)
 
-    {:ok, sp_v3} =
+    {:ok, _sp_v3} =
       Storybox.Stories.ScriptView
       |> Ash.ActionInput.for_action(:create_version, %{
         script_view_id: sv_2.id,
@@ -142,16 +113,12 @@ defmodule StoryboxWeb.ScriptViewTest do
       story: story,
       other_story: other_story,
       raw_token: raw_token,
-      tv_1: tv_1,
-      tv_2: tv_2,
       sv_1: sv_1,
       sv_2: sv_2,
       sv_3: sv_3,
       sv_4: sv_4,
       sp_v1: sp_v1,
       sp_v2: sp_v2,
-      sp_v3: sp_v3,
-      sp_v4: sp_v4,
       snapshot: snapshot
     }
   end
@@ -163,47 +130,31 @@ defmodule StoryboxWeb.ScriptViewTest do
     conn |> authed(raw_token) |> get("/api/stories/#{story.id}/views/script?#{query}")
   end
 
-  defp find_sequence(body, title), do: Enum.find(body["sequences"], &(&1["title"] == title))
-  defp find_scene(sequence, title), do: Enum.find(sequence["scenes"], &(&1["title"] == title))
+  defp find_scene(body, title), do: Enum.find(body["scenes"], &(&1["title"] == title))
 
   # ── mode=latest ─────────────────────────────────────────────────────────────
 
   describe "GET /api/stories/:story_id/views/script?mode=latest" do
-    test "returns all sequences with each scene resolved to its highest-numbered version and content",
-         %{
-           conn: conn,
-           story: story,
-           raw_token: raw_token
-         } do
+    test "returns all scenes resolved to their highest-numbered version with content", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token
+    } do
       conn = get_script(conn, story, raw_token, %{mode: "latest"})
       body = json_response(conn, 200)
 
       assert body["story_id"] == story.id
       assert body["mode"] == "latest"
       assert body["snapshot_id"] == nil
-      assert length(body["sequences"]) == 2
+      assert length(body["scenes"]) == 4
 
-      opening = find_sequence(body, "Opening")
-      cold_open = find_scene(opening, "Cold open")
+      cold_open = find_scene(body, "Cold open")
       assert cold_open["version"]["version_number"] == 2
       assert cold_open["content"] == "INT. OFFICE - NIGHT\n\nRevised."
 
-      inciting = find_scene(opening, "Inciting incident")
+      inciting = find_scene(body, "Inciting incident")
       assert inciting["version"]["version_number"] == 1
       assert inciting["content"] == "EXT. STREET - DAY\n\nSomething happens."
-    end
-
-    test "scenes within a sequence are ordered by position", %{
-      conn: conn,
-      story: story,
-      raw_token: raw_token
-    } do
-      conn = get_script(conn, story, raw_token, %{mode: "latest"})
-      opening = find_sequence(json_response(conn, 200), "Opening")
-
-      positions = Enum.map(opening["scenes"], & &1["position"])
-      assert positions == Enum.sort(positions)
-      assert hd(opening["scenes"])["title"] == "Cold open"
     end
 
     test "scene with no versions returns null version and null content without crashing", %{
@@ -213,8 +164,7 @@ defmodule StoryboxWeb.ScriptViewTest do
       sv_4: sv_4
     } do
       conn = get_script(conn, story, raw_token, %{mode: "latest"})
-      confrontation = find_sequence(json_response(conn, 200), "Confrontation")
-      aftermath = find_scene(confrontation, "Aftermath")
+      aftermath = find_scene(json_response(conn, 200), "Aftermath")
 
       assert aftermath["id"] == sv_4.id
       assert aftermath["version"] == nil
@@ -233,11 +183,11 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn = get_script(conn, story, raw_token, %{mode: "approved"})
       body = json_response(conn, 200)
 
-      cold_open = body |> find_sequence("Opening") |> find_scene("Cold open")
+      cold_open = find_scene(body, "Cold open")
       assert cold_open["version"]["version_number"] == 2
       assert cold_open["content"] == "INT. OFFICE - NIGHT\n\nRevised."
 
-      argument = body |> find_sequence("Confrontation") |> find_scene("The argument")
+      argument = find_scene(body, "The argument")
       assert argument["version"]["version_number"] == 1
       assert argument["content"] == "INT. KITCHEN - DAY\n\nThey argue."
     end
@@ -250,11 +200,11 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn = get_script(conn, story, raw_token, %{mode: "approved"})
       body = json_response(conn, 200)
 
-      inciting = body |> find_sequence("Opening") |> find_scene("Inciting incident")
+      inciting = find_scene(body, "Inciting incident")
       assert inciting["version"] == nil
       assert inciting["content"] == nil
 
-      aftermath = body |> find_sequence("Confrontation") |> find_scene("Aftermath")
+      aftermath = find_scene(body, "Aftermath")
       assert aftermath["version"] == nil
       assert aftermath["content"] == nil
     end
@@ -274,7 +224,7 @@ defmodule StoryboxWeb.ScriptViewTest do
 
       assert body["snapshot_id"] == snapshot.id
 
-      cold_open = body |> find_sequence("Opening") |> find_scene("Cold open")
+      cold_open = find_scene(body, "Cold open")
       assert cold_open["version"]["version_number"] == 1
       assert cold_open["content"] == "EXT. PARK - DAY\n\nFirst draft."
     end
@@ -288,16 +238,15 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn = get_script(conn, story, raw_token, %{mode: "snapshot", snapshot_id: snapshot.id})
       body = json_response(conn, 200)
 
-      # sv_2, sv_3, sv_4 are not in the snapshot
-      inciting = body |> find_sequence("Opening") |> find_scene("Inciting incident")
+      inciting = find_scene(body, "Inciting incident")
       assert inciting["version"] == nil
       assert inciting["content"] == nil
 
-      argument = body |> find_sequence("Confrontation") |> find_scene("The argument")
+      argument = find_scene(body, "The argument")
       assert argument["version"] == nil
       assert argument["content"] == nil
 
-      aftermath = body |> find_sequence("Confrontation") |> find_scene("Aftermath")
+      aftermath = find_scene(body, "Aftermath")
       assert aftermath["version"] == nil
       assert aftermath["content"] == nil
     end
@@ -397,8 +346,7 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn = get_script(conn, story, raw_token, %{mode: "latest"})
       body = json_response(conn, 200)
 
-      body["sequences"]
-      |> Enum.flat_map(& &1["scenes"])
+      body["scenes"]
       |> Enum.each(fn scene ->
         if scene["version"] do
           refute Map.has_key?(scene["version"], "content_uri")

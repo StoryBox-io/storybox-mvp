@@ -20,10 +20,6 @@ defmodule Storybox.Stories.Scene do
   relationships do
     belongs_to :story, Storybox.Stories.Story, allow_nil?: false, public?: true
     has_one :script_view, Storybox.Stories.ScriptView, public?: true
-
-    many_to_many :treatment_views, Storybox.Stories.TreatmentView,
-      through: Storybox.Stories.TreatmentViewScene,
-      public?: true
   end
 
   actions do

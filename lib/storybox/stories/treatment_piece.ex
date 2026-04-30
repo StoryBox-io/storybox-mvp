@@ -22,10 +22,8 @@ defmodule Storybox.Stories.TreatmentPiece do
       public?: true
 
     create_timestamp :inserted_at
-  end
 
-  relationships do
-    belongs_to :treatment_view, Storybox.Stories.TreatmentView, allow_nil?: false, public?: true
+    attribute :treatment_view_id, :uuid, allow_nil?: false, public?: true
   end
 
   actions do

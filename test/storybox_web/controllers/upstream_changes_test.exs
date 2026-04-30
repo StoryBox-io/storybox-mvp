@@ -5,12 +5,12 @@ defmodule StoryboxWeb.UpstreamChangesTest do
 
   # Shared setup creates:
   #
-  #   user ──── story ──── tv_1 ──── tp_v1 ──► UC1 (acknowledged: false, component_type: :character)
-  #                         └─── sv_1 ── sp_v1 ──► UC2 (acknowledged: true,  component_type: :world)
-  #          └── other_story ──── other_tv ──── other_tp_v1 ──► other_UC (acknowledged: false)
+  #   user ──── story ──── scene_1 ──── sv_1 ── sp_v1 ──► UC1 (unack, component_type: :character)
+  #                                              └── sp_v2 ──► UC2 (acknowledged, component_type: :world)
+  #          └── other_story ──── other_scene ──── other_sv ── other_sp ──► other_UC (unack)
   #
   # raw_token is scoped to story.
-  # UC1 must appear in responses; UC2 must not (acknowledged). other_UC must not (wrong story).
+  # UC1 must appear; UC2 must not (acknowledged); other_UC must not (wrong story).
 
   setup do
     {:ok, user} =
@@ -34,39 +34,9 @@ defmodule StoryboxWeb.UpstreamChangesTest do
 
     {:ok, raw_token, _} = ApiToken.generate(%{story_id: story.id, user_id: user.id})
 
-    {:ok, tv_1} =
-      Storybox.Stories.TreatmentView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Act I",
-        act: "Act I",
-        position: 1,
-        story_id: story.id
-      })
-      |> Ash.create(authorize?: false)
-
-    {:ok, tp_v1} =
-      Storybox.Stories.TreatmentPiece
-      |> Ash.Changeset.for_create(:create, %{
-        treatment_view_id: tv_1.id,
-        content_uri: "storybox://test/seq/v1.fountain",
-        version_number: 1,
-        upstream_status: :stale,
-        weights: %{}
-      })
-      |> Ash.create(authorize?: false)
-
     {:ok, scene_1} =
       Storybox.Stories.Scene
       |> Ash.Changeset.for_create(:create, %{title: "Scene 1", story_id: story.id})
-      |> Ash.create(authorize?: false)
-
-    {:ok, _tvs_1} =
-      Storybox.Stories.TreatmentViewScene
-      |> Ash.Changeset.for_create(:create, %{
-        treatment_view_id: tv_1.id,
-        scene_id: scene_1.id,
-        position: 1
-      })
       |> Ash.create(authorize?: false)
 
     {:ok, sv_1} =
@@ -85,12 +55,23 @@ defmodule StoryboxWeb.UpstreamChangesTest do
       })
       |> Ash.create(authorize?: false)
 
-    # UC1 — unacknowledged, on tp_v1 (should appear in responses)
+    {:ok, sp_v2} =
+      Storybox.Stories.ScriptPiece
+      |> Ash.Changeset.for_create(:create, %{
+        script_view_id: sv_1.id,
+        content_uri: "storybox://test/scene/v2.fountain",
+        version_number: 2,
+        upstream_status: :stale,
+        weights: %{}
+      })
+      |> Ash.create(authorize?: false)
+
+    # UC1 — unacknowledged, on sp_v1 (should appear in responses)
     {:ok, uc1} =
       Storybox.Stories.UpstreamChange
       |> Ash.Changeset.for_create(:create, %{
-        piece_version_type: :treatment_piece,
-        piece_version_id: tp_v1.id,
+        piece_version_type: :script_piece,
+        piece_version_id: sp_v1.id,
         component_type: :character,
         component_id: story.id,
         version_before: "v1",
@@ -98,12 +79,12 @@ defmodule StoryboxWeb.UpstreamChangesTest do
       })
       |> Ash.create(authorize?: false)
 
-    # UC2 — acknowledged, on sp_v1 (must NOT appear in responses)
+    # UC2 — acknowledged, on sp_v2 (must NOT appear in responses)
     {:ok, uc2} =
       Storybox.Stories.UpstreamChange
       |> Ash.Changeset.for_create(:create, %{
         piece_version_type: :script_piece,
-        piece_version_id: sp_v1.id,
+        piece_version_id: sp_v2.id,
         component_type: :world,
         component_id: story.id
       })
@@ -114,20 +95,21 @@ defmodule StoryboxWeb.UpstreamChangesTest do
       |> Ash.Changeset.for_update(:acknowledge)
       |> Ash.update(authorize?: false)
 
-    # other_UC — unacknowledged, but belongs to other_story's version (must NOT appear)
-    {:ok, other_tv} =
-      Storybox.Stories.TreatmentView
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Other Act",
-        position: 1,
-        story_id: other_story.id
-      })
+    # other_UC — unacknowledged, belongs to other_story's scene (must NOT appear)
+    {:ok, other_scene} =
+      Storybox.Stories.Scene
+      |> Ash.Changeset.for_create(:create, %{title: "Other Scene", story_id: other_story.id})
       |> Ash.create(authorize?: false)
 
-    {:ok, other_tp_v1} =
-      Storybox.Stories.TreatmentPiece
+    {:ok, other_sv} =
+      Storybox.Stories.ScriptView
+      |> Ash.Changeset.for_create(:create, %{title: "Other Scene", scene_id: other_scene.id})
+      |> Ash.create(authorize?: false)
+
+    {:ok, other_sp} =
+      Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        treatment_view_id: other_tv.id,
+        script_view_id: other_sv.id,
         content_uri: "storybox://test/other/v1.fountain",
         version_number: 1,
         upstream_status: :stale,
@@ -138,8 +120,8 @@ defmodule StoryboxWeb.UpstreamChangesTest do
     {:ok, _other_uc} =
       Storybox.Stories.UpstreamChange
       |> Ash.Changeset.for_create(:create, %{
-        piece_version_type: :treatment_piece,
-        piece_version_id: other_tp_v1.id,
+        piece_version_type: :script_piece,
+        piece_version_id: other_sp.id,
         component_type: :story,
         component_id: other_story.id
       })
@@ -147,7 +129,7 @@ defmodule StoryboxWeb.UpstreamChangesTest do
 
     %{
       story: story,
-      tp_v1: tp_v1,
+      sp_v1: sp_v1,
       uc1: uc1,
       raw_token: raw_token
     }
@@ -189,7 +171,7 @@ defmodule StoryboxWeb.UpstreamChangesTest do
       conn: conn,
       story: story,
       uc1: uc1,
-      tp_v1: tp_v1,
+      sp_v1: sp_v1,
       raw_token: raw_token
     } do
       conn =
@@ -200,8 +182,8 @@ defmodule StoryboxWeb.UpstreamChangesTest do
       [change] = json_response(conn, 200)["changes"]
 
       assert change["id"] == uc1.id
-      assert change["piece_version_type"] == "treatment_piece"
-      assert change["piece_version_id"] == tp_v1.id
+      assert change["piece_version_type"] == "script_piece"
+      assert change["piece_version_id"] == sp_v1.id
       assert change["component_type"] == "character"
       assert change["version_before"] == "v1"
       assert change["version_after"] == "v2"

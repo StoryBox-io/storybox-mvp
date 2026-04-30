@@ -4,11 +4,9 @@ defmodule Storybox.Stories.Notifiers.PropagateUpstreamChange do
   require Ash.Query
 
   alias Storybox.Stories.{
+    Scene,
     ScriptView,
     ScriptPiece,
-    TreatmentView,
-    TreatmentViewScene,
-    TreatmentPiece,
     UpstreamChange
   }
 
@@ -36,73 +34,44 @@ defmodule Storybox.Stories.Notifiers.PropagateUpstreamChange do
   defp component_info(Storybox.Stories.World, record), do: {record.story_id, :world, record.id}
 
   defp propagate(story_id, component_type, component_id, version_before, version_after) do
-    treatment_views =
-      TreatmentView
+    scene_ids =
+      Scene
       |> Ash.Query.filter(story_id == ^story_id)
       |> Ash.read!()
+      |> Enum.map(& &1.id)
 
-    for tv <- treatment_views do
-      treatment_pieces =
-        TreatmentPiece
-        |> Ash.Query.filter(treatment_view_id == ^tv.id)
+    script_views =
+      case scene_ids do
+        [] ->
+          []
+
+        ids ->
+          ScriptView
+          |> Ash.Query.filter(scene_id in ^ids)
+          |> Ash.read!()
+      end
+
+    for script_view <- script_views do
+      script_pieces =
+        ScriptPiece
+        |> Ash.Query.filter(script_view_id == ^script_view.id)
         |> Ash.read!()
 
-      for tp <- treatment_pieces do
-        tp
+      for sp <- script_pieces do
+        sp
         |> Ash.Changeset.for_update(:mark_stale, %{})
         |> Ash.update!()
 
         UpstreamChange
         |> Ash.Changeset.for_create(:create, %{
-          piece_version_type: :treatment_piece,
-          piece_version_id: tp.id,
+          piece_version_type: :script_piece,
+          piece_version_id: sp.id,
           component_type: component_type,
           component_id: component_id,
           version_before: version_before,
           version_after: version_after
         })
         |> Ash.create!()
-      end
-
-      scene_ids =
-        TreatmentViewScene
-        |> Ash.Query.filter(treatment_view_id == ^tv.id)
-        |> Ash.read!()
-        |> Enum.map(& &1.scene_id)
-
-      script_views =
-        case scene_ids do
-          [] ->
-            []
-
-          ids ->
-            ScriptView
-            |> Ash.Query.filter(scene_id in ^ids)
-            |> Ash.read!()
-        end
-
-      for script_view <- script_views do
-        script_pieces =
-          ScriptPiece
-          |> Ash.Query.filter(script_view_id == ^script_view.id)
-          |> Ash.read!()
-
-        for sp <- script_pieces do
-          sp
-          |> Ash.Changeset.for_update(:mark_stale, %{})
-          |> Ash.update!()
-
-          UpstreamChange
-          |> Ash.Changeset.for_create(:create, %{
-            piece_version_type: :script_piece,
-            piece_version_id: sp.id,
-            component_type: component_type,
-            component_id: component_id,
-            version_before: version_before,
-            version_after: version_after
-          })
-          |> Ash.create!()
-        end
       end
     end
 
