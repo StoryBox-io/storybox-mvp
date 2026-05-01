@@ -8,6 +8,7 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.Segment
     resource Storybox.Stories.World
     resource Storybox.Stories.SynopsisView
+    resource Storybox.Stories.SynopsisPiece
     resource Storybox.Stories.TreatmentPiece
     resource Storybox.Stories.ScriptView
     resource Storybox.Stories.ScriptPiece
