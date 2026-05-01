@@ -13,6 +13,10 @@ defmodule Storybox.Storage do
     "storybox://stories/#{story_id}/synopsis/v#{version_number}.fountain"
   end
 
+  def uri_for_synopsis_piece(story_id, sequence_id, version_number) do
+    "storybox://stories/#{story_id}/sequences/#{sequence_id}/synopsis/v#{version_number}.fountain"
+  end
+
   def uri_to_path("storybox://" <> path), do: path
 
   def put_content(uri, content) do
