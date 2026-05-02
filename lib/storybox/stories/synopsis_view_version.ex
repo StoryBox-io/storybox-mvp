@@ -45,16 +45,14 @@ defmodule Storybox.Stories.SynopsisViewVersion do
       run fn input, _context ->
         synopsis_view_id = input.arguments.synopsis_view_id
 
-        [synopsis_view] =
+        synopsis_view =
           Storybox.Stories.SynopsisView
           |> Ash.Query.filter(id == ^synopsis_view_id)
-          |> Ash.read!(authorize?: false)
+          |> Ash.read_one!(authorize?: false)
 
-        sequences =
-          Storybox.Stories.Sequence
-          |> Ash.Query.filter(story_id == ^synopsis_view.story_id)
-          |> Ash.Query.sort(inserted_at: :asc)
-          |> Ash.read!(authorize?: false)
+        story_id = synopsis_view.story_id
+
+        sequence_ids = sequence_ids_for_cut(story_id)
 
         existing_versions =
           Storybox.Stories.SynopsisViewVersion
@@ -75,12 +73,12 @@ defmodule Storybox.Stories.SynopsisViewVersion do
           })
           |> Ash.create(authorize?: false)
 
-        sequences
+        sequence_ids
         |> Enum.with_index(1)
-        |> Enum.each(fn {sequence, position} ->
+        |> Enum.each(fn {seq_id, position} ->
           latest_piece =
             Storybox.Stories.SynopsisPiece
-            |> Ash.Query.filter(sequence_id == ^sequence.id)
+            |> Ash.Query.filter(sequence_id == ^seq_id)
             |> Ash.Query.sort(version_number: :desc)
             |> Ash.Query.limit(1)
             |> Ash.read!(authorize?: false)
@@ -92,7 +90,7 @@ defmodule Storybox.Stories.SynopsisViewVersion do
                 view_version_id: vv.id,
                 view_version_type: :synopsis_vv,
                 position: position,
-                sequence_id: sequence.id,
+                sequence_id: seq_id,
                 pin_id: latest_piece.id,
                 pin_type: :synopsis_piece,
                 pin_version_at_creation: latest_piece.version_number
@@ -102,7 +100,7 @@ defmodule Storybox.Stories.SynopsisViewVersion do
                 view_version_id: vv.id,
                 view_version_type: :synopsis_vv,
                 position: position,
-                sequence_id: sequence.id
+                sequence_id: seq_id
               }
             end
 
@@ -113,6 +111,44 @@ defmodule Storybox.Stories.SynopsisViewVersion do
 
         {:ok, vv}
       end
+    end
+  end
+
+  # Sequence ordering source: the latest TreatmentViewVersion's Segments (in
+  # position order). Falls back to story.sequences ordered by inserted_at when
+  # the story has no TV/TVV yet — mirrors TVV.cut's own first-cut fallback.
+  defp sequence_ids_for_cut(story_id) do
+    treatment_view =
+      Storybox.Stories.TreatmentView
+      |> Ash.Query.filter(story_id == ^story_id)
+      |> Ash.Query.load(:treatment_view_versions)
+      |> Ash.read_one!(authorize?: false)
+
+    latest_tvv =
+      case treatment_view do
+        nil ->
+          nil
+
+        tv ->
+          tv.treatment_view_versions
+          |> Enum.sort_by(& &1.version_number, :desc)
+          |> List.first()
+      end
+
+    case latest_tvv do
+      nil ->
+        Storybox.Stories.Sequence
+        |> Ash.Query.filter(story_id == ^story_id)
+        |> Ash.Query.sort(:inserted_at)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(& &1.id)
+
+      tvv ->
+        Storybox.Stories.Segment
+        |> Ash.Query.filter(view_version_id == ^tvv.id and view_version_type == :treatment_vv)
+        |> Ash.Query.sort(:position)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(& &1.sequence_id)
     end
   end
 end

@@ -5,7 +5,9 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
     SynopsisView,
     SynopsisViewVersion,
     Segment,
-    SynopsisPiece
+    SynopsisPiece,
+    TreatmentView,
+    TreatmentViewVersion
   }
 
   require Ash.Query
@@ -265,6 +267,77 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
       # v2 pins prologue-v3
       assert seg_v2.pin_id == p1c.id
       assert seg_v2.pin_version_at_creation == 3
+    end
+  end
+
+  describe "cut order source" do
+    test "with no TreatmentView, falls back to story.sequences ordered by inserted_at", %{
+      synopsis_view: synopsis_view,
+      seq1: seq1,
+      seq2: seq2,
+      seq3: seq3
+    } do
+      {:ok, vv} =
+        SynopsisViewVersion
+        |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: synopsis_view.id})
+        |> Ash.run_action()
+
+      ordered_seq_ids =
+        Segment
+        |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == :synopsis_vv)
+        |> Ash.Query.sort(:position)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(& &1.sequence_id)
+
+      assert ordered_seq_ids == [seq1.id, seq2.id, seq3.id]
+    end
+
+    test "reads sequence order from latest TVV's segments (reversed natural order)", %{
+      story: story,
+      synopsis_view: synopsis_view,
+      seq1: seq1,
+      seq2: seq2,
+      seq3: seq3
+    } do
+      {:ok, treatment_view} =
+        TreatmentView
+        |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+        |> Ash.run_action()
+
+      {:ok, tvv} =
+        TreatmentViewVersion
+        |> Ash.Changeset.for_create(:create, %{
+          treatment_view_id: treatment_view.id,
+          version_number: 1
+        })
+        |> Ash.create()
+
+      # Reverse the natural order: capital, forest, prologue
+      [{seq3, 1}, {seq2, 2}, {seq1, 3}]
+      |> Enum.each(fn {seq, position} ->
+        Segment
+        |> Ash.Changeset.for_create(:create, %{
+          view_version_id: tvv.id,
+          view_version_type: :treatment_vv,
+          position: position,
+          sequence_id: seq.id
+        })
+        |> Ash.create!(authorize?: false)
+      end)
+
+      {:ok, svv} =
+        SynopsisViewVersion
+        |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: synopsis_view.id})
+        |> Ash.run_action()
+
+      ordered_seq_ids =
+        Segment
+        |> Ash.Query.filter(view_version_id == ^svv.id and view_version_type == :synopsis_vv)
+        |> Ash.Query.sort(:position)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(& &1.sequence_id)
+
+      assert ordered_seq_ids == [seq3.id, seq2.id, seq1.id]
     end
   end
 
