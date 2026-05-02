@@ -9,8 +9,9 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
   #               ├── Character: "Marcel"   (essence, voice, contradictions)
   #               ├── Character: "Nora"     (essence only)
   #               ├── World                 (history, rules, subtext)
-  #               ├── SynopsisVersion v1    (older)
-  #               └── SynopsisVersion v2    (latest — styled green in graph)
+  #               ├── SynopsisView          (one per story)
+  #               │     ├── SynopsisViewVersion v1  (older)
+  #               │     └── SynopsisViewVersion v2  (latest)
   #
   #   bob  ──► "Bob's Story" (separate user, used for auth isolation checks)
 
@@ -74,20 +75,23 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       })
       |> Ash.create()
 
-    {:ok, sv1} =
+    {:ok, synopsis_view} =
       Storybox.Stories.SynopsisView
+      |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+      |> Ash.run_action()
+
+    {:ok, sv1} =
+      Storybox.Stories.SynopsisViewVersion
       |> Ash.Changeset.for_create(:create, %{
-        story_id: story.id,
-        content_uri: "storybox://stories/#{story.id}/synopsis/v1",
+        synopsis_view_id: synopsis_view.id,
         version_number: 1
       })
       |> Ash.create()
 
     {:ok, sv2} =
-      Storybox.Stories.SynopsisView
+      Storybox.Stories.SynopsisViewVersion
       |> Ash.Changeset.for_create(:create, %{
-        story_id: story.id,
-        content_uri: "storybox://stories/#{story.id}/synopsis/v2",
+        synopsis_view_id: synopsis_view.id,
         version_number: 2
       })
       |> Ash.create()

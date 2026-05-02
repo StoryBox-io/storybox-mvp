@@ -33,7 +33,7 @@ defmodule StoryboxWeb.SynopsisViewTest do
   end
 
   describe "GET /api/stories/:story_id/views/synopsis" do
-    test "returns 404 when no synopsis versions exist", %{
+    test "returns 404 when no SynopsisView exists for the story", %{
       conn: conn,
       story: story,
       raw_token: raw_token
@@ -46,26 +46,43 @@ defmodule StoryboxWeb.SynopsisViewTest do
       assert json_response(conn, 404)["error"] == "no synopsis found"
     end
 
-    test "returns latest version with content when versions exist", %{
+    test "returns 404 when SynopsisView exists but has no versions", %{
       conn: conn,
       story: story,
       raw_token: raw_token
     } do
-      {:ok, _v1} =
+      {:ok, _sv} =
         Storybox.Stories.SynopsisView
-        |> Ash.ActionInput.for_action(:create_version, %{
-          story_id: story.id,
-          content: "First synopsis draft."
-        })
+        |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
         |> Ash.run_action()
 
-      {:ok, _v2} =
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis")
+
+      assert json_response(conn, 404)["error"] == "no synopsis found"
+    end
+
+    test "returns latest version metadata when SynopsisViewVersions exist", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token
+    } do
+      {:ok, sv} =
         Storybox.Stories.SynopsisView
-        |> Ash.ActionInput.for_action(:create_version, %{
-          story_id: story.id,
-          content: "Second synopsis draft."
-        })
+        |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
         |> Ash.run_action()
+
+      {:ok, _vv1} =
+        Storybox.Stories.SynopsisViewVersion
+        |> Ash.Changeset.for_create(:create, %{synopsis_view_id: sv.id, version_number: 1})
+        |> Ash.create()
+
+      {:ok, _vv2} =
+        Storybox.Stories.SynopsisViewVersion
+        |> Ash.Changeset.for_create(:create, %{synopsis_view_id: sv.id, version_number: 2})
+        |> Ash.create()
 
       conn =
         conn
@@ -74,62 +91,14 @@ defmodule StoryboxWeb.SynopsisViewTest do
 
       assert %{
                "story_id" => story_id,
+               "synopsis_view_id" => synopsis_view_id,
                "version_number" => version_number,
-               "inserted_at" => _inserted_at,
-               "content" => content
+               "inserted_at" => _inserted_at
              } = json_response(conn, 200)
 
       assert story_id == story.id
+      assert synopsis_view_id == sv.id
       assert version_number == 2
-      assert content == "Second synopsis draft."
-    end
-
-    test "returns 503 when content_uri points to a nonexistent MinIO object", %{
-      conn: conn,
-      story: story,
-      raw_token: raw_token
-    } do
-      {:ok, _version} =
-        Storybox.Stories.SynopsisView
-        |> Ash.Changeset.for_create(:create, %{
-          story_id: story.id,
-          content_uri: "storybox://stories/#{story.id}/synopsis/v999_nonexistent.fountain",
-          version_number: 1
-        })
-        |> Ash.create()
-
-      conn =
-        conn
-        |> authed(raw_token)
-        |> get("/api/stories/#{story.id}/views/synopsis")
-
-      assert json_response(conn, 503)["error"] == "content unavailable"
-    end
-
-    test "returns non-ASCII characters (em dash, smart quotes) without double-encoding", %{
-      conn: conn,
-      story: story,
-      raw_token: raw_token
-    } do
-      content = "Frank carries something back \u2014 something that has no name."
-
-      {:ok, _v} =
-        Storybox.Stories.SynopsisView
-        |> Ash.ActionInput.for_action(:create_version, %{
-          story_id: story.id,
-          content: content
-        })
-        |> Ash.run_action()
-
-      conn =
-        conn
-        |> authed(raw_token)
-        |> get("/api/stories/#{story.id}/views/synopsis")
-
-      body = json_response(conn, 200)
-
-      assert body["content"] == content,
-             "content was double-encoded: #{inspect(body["content"])}"
     end
 
     test "returns 403 when token is scoped to a different story", %{

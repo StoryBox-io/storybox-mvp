@@ -13,52 +13,43 @@ defmodule Storybox.Stories.SynopsisView do
   attributes do
     uuid_primary_key :id
 
-    attribute :content_uri, :string, allow_nil?: false, public?: true
-    attribute :version_number, :integer, allow_nil?: false, public?: true
-
     create_timestamp :inserted_at
   end
 
   relationships do
     belongs_to :story, Storybox.Stories.Story, allow_nil?: false, public?: true
+
+    has_many :synopsis_view_versions, Storybox.Stories.SynopsisViewVersion, public?: true
+  end
+
+  identities do
+    identity :unique_story, [:story_id]
   end
 
   actions do
     defaults [:read]
 
     create :create do
-      accept [:story_id, :content_uri, :version_number]
+      accept [:story_id]
     end
 
-    action :create_version, :struct do
+    action :ensure_for_story, :struct do
       constraints instance_of: Storybox.Stories.SynopsisView
-      argument :content, :string, allow_nil?: false
       argument :story_id, :uuid, allow_nil?: false
 
       run fn input, _context ->
         story_id = input.arguments.story_id
 
-        existing_views =
-          Storybox.Stories.SynopsisView
-          |> Ash.Query.filter(story_id == ^story_id)
-          |> Ash.read!(authorize?: false)
+        case Storybox.Stories.SynopsisView
+             |> Ash.Query.filter(story_id == ^story_id)
+             |> Ash.read_one!(authorize?: false) do
+          nil ->
+            Storybox.Stories.SynopsisView
+            |> Ash.Changeset.for_create(:create, %{story_id: story_id})
+            |> Ash.create(authorize?: false)
 
-        next_version_number =
-          existing_views
-          |> Enum.map(& &1.version_number)
-          |> Enum.max(fn -> 0 end)
-          |> Kernel.+(1)
-
-        uri = Storybox.Storage.uri_for_synopsis(story_id, next_version_number)
-
-        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content) do
-          Storybox.Stories.SynopsisView
-          |> Ash.Changeset.for_create(:create, %{
-            story_id: story_id,
-            content_uri: uri,
-            version_number: next_version_number
-          })
-          |> Ash.create(authorize?: false)
+          existing ->
+            {:ok, existing}
         end
       end
     end

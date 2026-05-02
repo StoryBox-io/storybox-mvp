@@ -146,6 +146,20 @@ defmodule Storybox.Stories.Segment do
   """
   def pin_target_latest_version(%{pin_id: nil}), do: nil
 
+  def pin_target_latest_version(%{pin_type: :synopsis_piece, pin_id: pin_id})
+      when not is_nil(pin_id) do
+    pinned =
+      Storybox.Stories.SynopsisPiece
+      |> Ash.Query.filter(id == ^pin_id)
+      |> Ash.read_one!(authorize?: false)
+
+    Storybox.Stories.SynopsisPiece
+    |> Ash.Query.filter(sequence_id == ^pinned.sequence_id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(& &1.version_number)
+    |> Enum.max(fn -> nil end)
+  end
+
   def pin_target_latest_version(%{pin_type: :script_piece, pin_id: pin_id})
       when not is_nil(pin_id) do
     pinned =
@@ -165,6 +179,7 @@ defmodule Storybox.Stories.Segment do
           "pin_target_latest_version/1 is not yet implemented for pin_type #{inspect(pin_type)}"
   end
 
+  defp pin_module!(:synopsis_piece), do: Storybox.Stories.SynopsisPiece
   defp pin_module!(:script_piece), do: Storybox.Stories.ScriptPiece
 
   defp pin_module!(pin_type) when pin_type in @pin_types do

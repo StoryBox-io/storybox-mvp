@@ -33,22 +33,21 @@ defmodule StoryboxWeb.StoryOverviewLive do
               |> Ash.Query.filter(story_id == ^story.id)
               |> Ash.read_one!(authorize?: false)
 
-            synopsis_views =
+            synopsis_view =
               Storybox.Stories.SynopsisView
               |> Ash.Query.filter(story_id == ^story.id)
-              |> Ash.Query.sort(version_number: :desc)
-              |> Ash.read!(authorize?: false)
+              |> Ash.read_one!(authorize?: false)
 
-            latest_synopsis_content =
-              case synopsis_views do
-                [latest | _] ->
-                  case Storybox.Storage.get_content(latest.content_uri) do
-                    {:ok, content} -> content
-                    _ -> nil
-                  end
+            synopsis_view_versions =
+              case synopsis_view do
+                nil ->
+                  []
 
-                [] ->
-                  nil
+                sv ->
+                  Storybox.Stories.SynopsisViewVersion
+                  |> Ash.Query.filter(synopsis_view_id == ^sv.id)
+                  |> Ash.Query.sort(version_number: :desc)
+                  |> Ash.read!(authorize?: false)
               end
 
             {:ok,
@@ -56,8 +55,7 @@ defmodule StoryboxWeb.StoryOverviewLive do
                story: story,
                characters: characters,
                world: world,
-               synopsis_views: synopsis_views,
-               latest_synopsis_content: latest_synopsis_content,
+               synopsis_view_versions: synopsis_view_versions,
                page_title: story.title
              )}
         end
@@ -170,23 +168,16 @@ defmodule StoryboxWeb.StoryOverviewLive do
 
         <section class="space-y-3">
           <h2 class="text-xl font-semibold">Synopsis</h2>
-          <%= if @synopsis_views == [] do %>
+          <%= if @synopsis_view_versions == [] do %>
             <p class="text-base-content/60 text-sm">No synopsis versions yet.</p>
           <% else %>
-            <%= if @latest_synopsis_content do %>
-              <div class="card bg-base-200 shadow-sm">
-                <div class="card-body">
-                  <p class="text-sm whitespace-pre-wrap">{@latest_synopsis_content}</p>
-                </div>
-              </div>
-            <% end %>
             <ul class="space-y-2">
-              <%= for {view, index} <- Enum.with_index(@synopsis_views) do %>
+              <%= for {vv, index} <- Enum.with_index(@synopsis_view_versions) do %>
                 <li class="card bg-base-100 shadow-sm">
                   <div class="card-body py-3 flex flex-row items-center gap-3">
-                    <span class="font-mono font-semibold">v{view.version_number}</span>
+                    <span class="font-mono font-semibold">v{vv.version_number}</span>
                     <span class="text-base-content/60 text-sm">
-                      {Calendar.strftime(view.inserted_at, "%B %-d, %Y")}
+                      {Calendar.strftime(vv.inserted_at, "%B %-d, %Y")}
                     </span>
                     <%= if index == 0 do %>
                       <span class="badge badge-success badge-sm">Latest</span>
