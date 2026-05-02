@@ -49,33 +49,43 @@ defmodule StoryboxWeb.ApiController do
   def synopsis_view(conn, _params) do
     story = conn.assigns.current_story
 
-    latest =
+    synopsis_view =
       Storybox.Stories.SynopsisView
       |> Ash.Query.filter(story_id == ^story.id)
-      |> Ash.Query.sort(version_number: :desc)
-      |> Ash.Query.limit(1)
       |> Ash.read_one(authorize?: false)
 
-    case latest do
+    case synopsis_view do
       {:ok, nil} ->
         conn
         |> put_status(404)
         |> json(%{error: "no synopsis found"})
 
       {:ok, view} ->
-        case Storybox.Storage.get_content(view.content_uri) do
-          {:ok, content} ->
+        latest_vv =
+          Storybox.Stories.SynopsisViewVersion
+          |> Ash.Query.filter(synopsis_view_id == ^view.id)
+          |> Ash.Query.sort(version_number: :desc)
+          |> Ash.Query.limit(1)
+          |> Ash.read_one(authorize?: false)
+
+        case latest_vv do
+          {:ok, nil} ->
+            conn
+            |> put_status(404)
+            |> json(%{error: "no synopsis found"})
+
+          {:ok, vv} ->
             json(conn, %{
               story_id: story.id,
-              version_number: view.version_number,
-              inserted_at: view.inserted_at,
-              content: content
+              synopsis_view_id: view.id,
+              version_number: vv.version_number,
+              inserted_at: vv.inserted_at
             })
 
           {:error, _} ->
             conn
-            |> put_status(503)
-            |> json(%{error: "content unavailable"})
+            |> put_status(500)
+            |> json(%{error: "internal error"})
         end
 
       {:error, _} ->

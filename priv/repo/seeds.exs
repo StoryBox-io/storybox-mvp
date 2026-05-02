@@ -170,34 +170,13 @@ if little_witch = all_stories["Little Witch"] do
     IO.puts("  Created character: #{name}")
   end
 
-  # -- Synopsis versions -----------------------------------------------------
-  # NOTE: Current schema uses a monolithic blob per version. Issue #71
-  # (Spike S-B) will redesign this to one SynopsisPiece per sequence slot.
-  # The per-segment content lives in pandaChest as synopsis-{seq}-v1.fountain.
-
-  existing_synopsis_count =
+  # -- SynopsisView (logical header — one per story) -------------------------
+  {:ok, _synopsis_view} =
     Storybox.Stories.SynopsisView
-    |> Ash.Query.filter(story_id == ^little_witch.id)
-    |> Ash.read!(authorize?: false)
-    |> length()
+    |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: little_witch.id})
+    |> Ash.run_action(authorize?: false)
 
-  if existing_synopsis_count == 0 do
-    Ash.ActionInput.for_action(Storybox.Stories.SynopsisView, :create_version, %{
-      story_id: little_witch.id,
-      content: """
-      Fleur is a young orphan raised in isolation by Silas, a healer and former member of the Order of Flame. Silas trained Fleur only in healing — never the full, dangerous discipline of demonkin. When the Alderman's men find Silas, she presses the chest key into Fleur's hands and walks out to meet them. Fleur is left alone.
-
-      The hope that she might be the Chosen One finally has room to breathe. She opens the Book of Demons. The ritual goes catastrophically wrong, burning the cottage to ash. In the ruins, a diminished Flame Demon bargains for survival by finding the hope already inside her and naming it. She shelters him in a lantern and walks toward the capital.
-
-      In the capital, Fleur follows Silas's example — working among the sick and poor, building trust through honest effort. But each time she leans on the demon for help, the honest work shrinks and his influence grows. The Alderman recognises her. He gives her access to the city's prisoners — including Kestrel, the Order's former war leader, imprisoned for a decade. Kestrel plays both sides, steering Fleur toward the fire the same way the war once steered her.
-
-      At the coronation, the demon erupts. The city burns. But Fleur does not collapse — Silas's teaching reasserts itself. She throws herself between the fire and the people with nothing but her own body. Kestrel watches and the calculation breaks. She reaches into the fire and tells Fleur the truth: there is no Chosen One. There never was. The only power that is real is earned. The demon is sealed. Kestrel is diminished. Fleur stands at the beginning of her real training.
-      """
-    })
-    |> Ash.run_action!(authorize?: false)
-
-    IO.puts("  Created synopsis v1 for Little Witch")
-  end
+  IO.puts("  SynopsisView ready for Little Witch")
 
   # -- Scene entities + ScriptViews + ScriptPieces ----------------------------
   # Five scenes seeded directly under the story (no slot intermediary).
