@@ -1,8 +1,8 @@
 defmodule Storybox.Storage do
   @bucket Application.compile_env(:storybox, :minio_bucket, "storybox-pieces")
 
-  def uri_for_sequence(story_id, piece_id, version_number) do
-    "storybox://stories/#{story_id}/sequences/#{piece_id}/v#{version_number}.fountain"
+  def uri_for_sequence_piece(story_id, sequence_id, version_number) do
+    "storybox://stories/#{story_id}/sequences/#{sequence_id}/v#{version_number}.fountain"
   end
 
   def uri_for_scene(story_id, piece_id, version_number) do

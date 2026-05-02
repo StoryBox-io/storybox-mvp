@@ -27,6 +27,7 @@ defmodule Storybox.Stories.Story do
     has_one :world, Storybox.Stories.World, public?: true
     has_many :synopsis_views, Storybox.Stories.SynopsisView, public?: true
     has_many :synopsis_pieces, Storybox.Stories.SynopsisPiece, public?: true
+    has_many :sequence_pieces, Storybox.Stories.SequencePiece, public?: true
 
     has_many :scenes, Storybox.Stories.Scene, public?: true
   end

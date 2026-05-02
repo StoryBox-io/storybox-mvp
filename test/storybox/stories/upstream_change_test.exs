@@ -35,34 +35,42 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       })
       |> Ash.create()
 
-    # TreatmentPiece still exists as an orphaned resource; provide a synthetic UUID
-    # for treatment_view_id (no FK constraint after migration).
-    {:ok, treatment_piece} =
-      Storybox.Stories.TreatmentPiece
+    {:ok, sequence} =
+      Storybox.Stories.Sequence
       |> Ash.Changeset.for_create(:create, %{
-        treatment_view_id: Ash.UUID.generate(),
-        content_uri: "storybox://stories/#{story.id}/sequences/synthetic/v1",
+        story_id: story.id,
+        name: "Act One",
+        slug: "act-one"
+      })
+      |> Ash.create()
+
+    {:ok, sequence_piece} =
+      Storybox.Stories.SequencePiece
+      |> Ash.Changeset.for_create(:create, %{
+        story_id: story.id,
+        sequence_id: sequence.id,
+        content_uri: "storybox://stories/#{story.id}/sequences/#{sequence.id}/v1.fountain",
         version_number: 1
       })
       |> Ash.create()
 
     %{
       story: story,
-      treatment_piece: treatment_piece,
+      sequence_piece: sequence_piece,
       script_piece: script_piece
     }
   end
 
   describe "create" do
-    test "creates an UpstreamChange for a treatment_piece target", %{
+    test "creates an UpstreamChange for a sequence_piece target", %{
       story: story,
-      treatment_piece: treatment_piece
+      sequence_piece: sequence_piece
     } do
       assert {:ok, change} =
                Storybox.Stories.UpstreamChange
                |> Ash.Changeset.for_create(:create, %{
-                 piece_version_type: :treatment_piece,
-                 piece_version_id: treatment_piece.id,
+                 piece_version_type: :sequence_piece,
+                 piece_version_id: sequence_piece.id,
                  component_type: :story,
                  component_id: story.id,
                  version_before: "2026-01-01T00:00:00Z",
@@ -70,8 +78,8 @@ defmodule Storybox.Stories.UpstreamChangeTest do
                })
                |> Ash.create()
 
-      assert change.piece_version_type == :treatment_piece
-      assert change.piece_version_id == treatment_piece.id
+      assert change.piece_version_type == :sequence_piece
+      assert change.piece_version_id == sequence_piece.id
       assert change.component_type == :story
       assert change.component_id == story.id
       assert change.version_before == "2026-01-01T00:00:00Z"
