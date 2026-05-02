@@ -8,7 +8,7 @@ require Ash.Query
 # Reference story: Little Witch (pandaChest/projects/story/LittleWitch/)
 # The folder structure there mirrors the model:
 #   synopsis-{seq}-v{N}.fountain  → SynopsisView segments (post #71 redesign)
-#   {seq}-v{N}.fountain           → TreatmentPiece content
+#   {seq}-v{N}.fountain           → SequencePiece content
 #   scenes/{slug}/script-v{N}.fountain → ScriptPiece content
 # ---------------------------------------------------------------------------
 

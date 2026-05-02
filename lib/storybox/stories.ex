@@ -9,7 +9,7 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.World
     resource Storybox.Stories.SynopsisView
     resource Storybox.Stories.SynopsisPiece
-    resource Storybox.Stories.TreatmentPiece
+    resource Storybox.Stories.SequencePiece
     resource Storybox.Stories.ScriptView
     resource Storybox.Stories.ScriptPiece
     resource Storybox.Stories.Scene
