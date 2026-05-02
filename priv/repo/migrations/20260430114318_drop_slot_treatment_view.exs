@@ -8,30 +8,7 @@ defmodule Storybox.Repo.Migrations.DropSlotTreatmentView do
   use Ecto.Migration
 
   def up do
-    # On existing DBs, the constraint is named treatment_pieces_treatment_view_id_fkey
-    # (renamed by scene_component). On fresh DBs the rename was skipped (treatment_views
-    # didn't exist yet), so the original name is sequence_versions_sequence_piece_id_fkey.
-    execute """
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_schema = 'public' AND table_name = 'treatment_pieces'
-          AND constraint_name = 'treatment_pieces_treatment_view_id_fkey'
-      ) THEN
-        ALTER TABLE treatment_pieces
-          DROP CONSTRAINT treatment_pieces_treatment_view_id_fkey;
-      ELSIF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_schema = 'public' AND table_name = 'treatment_pieces'
-          AND constraint_name = 'sequence_versions_sequence_piece_id_fkey'
-      ) THEN
-        ALTER TABLE treatment_pieces
-          DROP CONSTRAINT sequence_versions_sequence_piece_id_fkey;
-      END IF;
-    END
-    $$
-    """
+    drop constraint(:treatment_pieces, "treatment_pieces_treatment_view_id_fkey")
 
     alter table(:treatment_pieces) do
       modify :treatment_view_id, :uuid
@@ -39,7 +16,7 @@ defmodule Storybox.Repo.Migrations.DropSlotTreatmentView do
 
     create index(:treatment_pieces, [:treatment_view_id])
 
-    drop_if_exists table(:treatment_view_scenes)
+    drop table(:treatment_view_scenes)
     drop table(:treatment_views)
   end
 
