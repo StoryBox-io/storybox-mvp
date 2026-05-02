@@ -8,44 +8,48 @@ defmodule Storybox.Repo.Migrations.SceneComponent do
   use Ecto.Migration
 
   def up do
-    # Rename stale FK constraint names left over from the table rename migration
-    drop constraint(:treatment_views, "sequence_pieces_story_id_fkey")
+    # On a fresh DB, rename_piece_version_vocabulary (timestamp 20260426120000) has not run yet,
+    # so treatment_views, treatment_pieces, synopsis_views, script_views, and script_pieces
+    # don't exist at this point. All operations that reference those tables are guarded and
+    # deferred to migration 20260426150000_deferred_scene_component. On an existing DB where
+    # this ran in the original (pre-#96) order, treatment_views already exists and all steps
+    # execute normally.
 
-    alter table(:treatment_views) do
-      modify :story_id,
-             references(:stories,
-               column: :id,
-               name: "treatment_views_story_id_fkey",
-               type: :uuid,
-               prefix: "public"
-             )
-    end
+    # FK renames and all renamed-table operations: skip on fresh DB.
+    execute """
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'treatment_views'
+      ) THEN
+        RETURN;
+      END IF;
 
-    drop constraint(:treatment_pieces, "sequence_versions_sequence_piece_id_fkey")
+      -- Rename stale FK constraint names left over from the table rename migration.
+      ALTER TABLE treatment_views DROP CONSTRAINT IF EXISTS "sequence_pieces_story_id_fkey";
+      BEGIN
+        ALTER TABLE treatment_views
+          ADD CONSTRAINT "treatment_views_story_id_fkey"
+          FOREIGN KEY (story_id) REFERENCES stories(id);
+      EXCEPTION WHEN duplicate_object THEN NULL; END;
 
-    alter table(:treatment_pieces) do
-      modify :treatment_view_id,
-             references(:treatment_views,
-               column: :id,
-               name: "treatment_pieces_treatment_view_id_fkey",
-               type: :uuid,
-               prefix: "public"
-             )
-    end
+      ALTER TABLE treatment_pieces DROP CONSTRAINT IF EXISTS "sequence_versions_sequence_piece_id_fkey";
+      BEGIN
+        ALTER TABLE treatment_pieces
+          ADD CONSTRAINT "treatment_pieces_treatment_view_id_fkey"
+          FOREIGN KEY (treatment_view_id) REFERENCES treatment_views(id);
+      EXCEPTION WHEN duplicate_object THEN NULL; END;
 
-    drop constraint(:synopsis_views, "synopsis_versions_story_id_fkey")
+      ALTER TABLE synopsis_views DROP CONSTRAINT IF EXISTS "synopsis_versions_story_id_fkey";
+      BEGIN
+        ALTER TABLE synopsis_views
+          ADD CONSTRAINT "synopsis_views_story_id_fkey"
+          FOREIGN KEY (story_id) REFERENCES stories(id);
+      EXCEPTION WHEN duplicate_object THEN NULL; END;
+    END $$
+    """
 
-    alter table(:synopsis_views) do
-      modify :story_id,
-             references(:stories,
-               column: :id,
-               name: "synopsis_views_story_id_fkey",
-               type: :uuid,
-               prefix: "public"
-             )
-    end
-
-    # Create scenes table (must exist before treatment_view_scenes and script_views.scene_id)
+    # Create scenes table — safe unconditionally (references only stories).
     create table(:scenes, primary_key: false) do
       add :id, :uuid, null: false, default: fragment("gen_random_uuid()"), primary_key: true
       add :title, :text, null: false
@@ -69,112 +73,96 @@ defmodule Storybox.Repo.Migrations.SceneComponent do
           null: false
     end
 
-    # Create treatment_view_scenes join table
-    create table(:treatment_view_scenes, primary_key: false) do
-      add :id, :uuid, null: false, default: fragment("gen_random_uuid()"), primary_key: true
-      add :position, :bigint, null: false
-
-      add :inserted_at, :utc_datetime_usec,
-        null: false,
-        default: fragment("(now() AT TIME ZONE 'utc')")
-
-      add :updated_at, :utc_datetime_usec,
-        null: false,
-        default: fragment("(now() AT TIME ZONE 'utc')")
-
-      add :treatment_view_id,
-          references(:treatment_views,
-            column: :id,
-            name: "treatment_view_scenes_treatment_view_id_fkey",
-            type: :uuid,
-            prefix: "public"
-          ),
-          null: false
-
-      add :scene_id,
-          references(:scenes,
-            column: :id,
-            name: "treatment_view_scenes_scene_id_fkey",
-            type: :uuid,
-            prefix: "public"
-          ),
-          null: false
-    end
-
-    # Add scene_id as nullable first — populated in the data migration below
-    alter table(:script_views) do
-      add :scene_id,
-          references(:scenes,
-            column: :id,
-            name: "script_views_scene_id_fkey",
-            type: :uuid,
-            prefix: "public"
-          ),
-          null: true
-    end
-
-    # Data migration: create a Scene + TreatmentViewScene for each existing ScriptView
+    # treatment_view_scenes, script_views changes, data migration, script_pieces FK rename —
+    # all reference renamed tables; deferred to 20260426150000 on a fresh DB.
     execute """
-    CREATE TEMP TABLE _scene_migrations (
-      script_view_id uuid NOT NULL,
-      scene_id       uuid NOT NULL,
-      treatment_view_id uuid NOT NULL,
-      position       bigint NOT NULL
-    )
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'treatment_views'
+      ) THEN
+        RETURN;
+      END IF;
+
+      -- Create treatment_view_scenes join table.
+      IF NOT EXISTS (
+        SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'treatment_view_scenes'
+      ) THEN
+        CREATE TABLE treatment_view_scenes (
+          id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+          position bigint NOT NULL,
+          inserted_at timestamptz NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+          updated_at  timestamptz NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+          treatment_view_id uuid NOT NULL
+            CONSTRAINT treatment_view_scenes_treatment_view_id_fkey
+            REFERENCES treatment_views(id),
+          scene_id uuid NOT NULL
+            CONSTRAINT treatment_view_scenes_scene_id_fkey
+            REFERENCES scenes(id)
+        );
+      END IF;
+
+      -- Add scene_id to script_views as nullable first.
+      IF NOT EXISTS (
+        SELECT FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name   = 'script_views'
+          AND column_name  = 'scene_id'
+      ) THEN
+        ALTER TABLE script_views
+          ADD COLUMN scene_id uuid
+          CONSTRAINT script_views_scene_id_fkey REFERENCES scenes(id);
+      END IF;
+
+      -- Data migration: create a Scene + TreatmentViewScene for each existing ScriptView.
+      IF NOT EXISTS (SELECT FROM treatment_view_scenes LIMIT 1) THEN
+        CREATE TEMP TABLE _scene_migrations (
+          script_view_id    uuid NOT NULL,
+          scene_id          uuid NOT NULL,
+          treatment_view_id uuid NOT NULL,
+          position          bigint NOT NULL
+        );
+
+        INSERT INTO _scene_migrations (script_view_id, scene_id, treatment_view_id, position)
+        SELECT sv.id, gen_random_uuid(), sv.treatment_view_id, sv.position
+        FROM script_views sv
+        WHERE sv.treatment_view_id IS NOT NULL;
+
+        INSERT INTO scenes (id, title, story_id, inserted_at, updated_at)
+        SELECT sm.scene_id, sv.title, tv.story_id,
+               (now() AT TIME ZONE 'utc'), (now() AT TIME ZONE 'utc')
+        FROM _scene_migrations sm
+        JOIN script_views sv ON sv.id = sm.script_view_id
+        JOIN treatment_views tv ON tv.id = sm.treatment_view_id;
+
+        UPDATE script_views
+        SET scene_id = sm.scene_id
+        FROM _scene_migrations sm
+        WHERE script_views.id = sm.script_view_id;
+
+        INSERT INTO treatment_view_scenes
+               (id, treatment_view_id, scene_id, position, inserted_at, updated_at)
+        SELECT gen_random_uuid(), sm.treatment_view_id, sm.scene_id, sm.position,
+               (now() AT TIME ZONE 'utc'), (now() AT TIME ZONE 'utc')
+        FROM _scene_migrations sm;
+
+        DROP TABLE _scene_migrations;
+      END IF;
+
+      -- Enforce NOT NULL and drop old columns from script_views.
+      ALTER TABLE script_views ALTER COLUMN scene_id SET NOT NULL;
+      ALTER TABLE script_views DROP COLUMN IF EXISTS treatment_view_id;
+      ALTER TABLE script_views DROP COLUMN IF EXISTS position;
+
+      -- Update script_pieces FK constraint name to match new table vocabulary.
+      ALTER TABLE script_pieces DROP CONSTRAINT IF EXISTS "scene_versions_scene_piece_id_fkey";
+      BEGIN
+        ALTER TABLE script_pieces
+          ADD CONSTRAINT "script_pieces_script_view_id_fkey"
+          FOREIGN KEY (script_view_id) REFERENCES script_views(id);
+      EXCEPTION WHEN duplicate_object THEN NULL; END;
+    END $$
     """
-
-    execute """
-    INSERT INTO _scene_migrations (script_view_id, scene_id, treatment_view_id, position)
-    SELECT sv.id, gen_random_uuid(), sv.treatment_view_id, sv.position
-    FROM script_views sv
-    WHERE sv.treatment_view_id IS NOT NULL
-    """
-
-    execute """
-    INSERT INTO scenes (id, title, story_id, inserted_at, updated_at)
-    SELECT sm.scene_id, sv.title, tv.story_id,
-           (now() AT TIME ZONE 'utc'), (now() AT TIME ZONE 'utc')
-    FROM _scene_migrations sm
-    JOIN script_views sv ON sv.id = sm.script_view_id
-    JOIN treatment_views tv ON tv.id = sm.treatment_view_id
-    """
-
-    execute """
-    UPDATE script_views
-    SET scene_id = sm.scene_id
-    FROM _scene_migrations sm
-    WHERE script_views.id = sm.script_view_id
-    """
-
-    execute """
-    INSERT INTO treatment_view_scenes (id, treatment_view_id, scene_id, position, inserted_at, updated_at)
-    SELECT gen_random_uuid(), sm.treatment_view_id, sm.scene_id, sm.position,
-           (now() AT TIME ZONE 'utc'), (now() AT TIME ZONE 'utc')
-    FROM _scene_migrations sm
-    """
-
-    execute "DROP TABLE _scene_migrations"
-
-    # Enforce NOT NULL and drop old columns from script_views
-    execute "ALTER TABLE script_views ALTER COLUMN scene_id SET NOT NULL"
-
-    alter table(:script_views) do
-      remove :treatment_view_id
-      remove :position
-    end
-
-    # Update script_pieces FK constraint name to match new table vocabulary
-    drop constraint(:script_pieces, "scene_versions_scene_piece_id_fkey")
-
-    alter table(:script_pieces) do
-      modify :script_view_id,
-             references(:script_views,
-               column: :id,
-               name: "script_pieces_script_view_id_fkey",
-               type: :uuid,
-               prefix: "public"
-             )
-    end
   end
 
   def down do
