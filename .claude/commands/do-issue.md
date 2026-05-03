@@ -11,7 +11,7 @@ Note the title, milestone, labels, and Domain block.
 ## Step 2 — Check for an existing planning proposal
 
 ```
-gh issue comments $ARGUMENTS --repo StoryBox-io/storybox-mvp
+gh issue view $ARGUMENTS --repo StoryBox-io/storybox-mvp --comments
 ```
 
 Look for a comment containing `## Planning proposal`.

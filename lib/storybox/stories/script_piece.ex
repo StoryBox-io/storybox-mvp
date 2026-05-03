@@ -27,6 +27,10 @@ defmodule Storybox.Stories.ScriptPiece do
     belongs_to :scene, Storybox.Stories.Scene, allow_nil?: false, public?: true
   end
 
+  identities do
+    identity :unique_version_per_scene, [:scene_id, :version_number]
+  end
+
   actions do
     defaults [:read]
 
