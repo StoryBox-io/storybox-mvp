@@ -30,3 +30,4 @@ CLAUDE.md
 /.claude/*
 !/.claude/model/
 !/.claude/commands/
+!/.claude/conversations/
