@@ -14,7 +14,9 @@ Note the title, milestone, labels, and Domain block.
 gh issue view $ARGUMENTS --repo StoryBox-io/storybox-mvp --comments
 ```
 
-Look for a comment containing `## Planning proposal`.
+Look for:
+- A comment containing `## Planning proposal` (the plan)
+- A comment containing `## Orchestrator review` (the approval)
 
 ---
 
@@ -26,17 +28,25 @@ Trigger the planning workflow:
 gh workflow run plan-issue.yml --repo StoryBox-io/storybox-mvp --field issue=$ARGUMENTS
 ```
 
-Report the Actions run URL and tell the user: the planning agent is running and will post a proposal as a comment on the issue. Re-run `/do-issue $ARGUMENTS` once the comment appears to get implementation instructions.
+Report the Actions run URL and tell the user: the planning agent is running and will post a proposal as a comment on the issue. Re-run `/do-issue $ARGUMENTS` once the comment appears.
 
 ---
 
-## If a planning proposal EXISTS
+## If a planning proposal EXISTS but NO orchestrator review exists
 
-The plan is approved. Implement it now.
+Tell the user: the plan is awaiting orchestrator review. Do not implement. Stop here.
 
-1. Read the planning proposal comment in full.
+---
+
+## If BOTH a planning proposal AND an orchestrator review exist
+
+Read both comments in full. The orchestrator review may override or constrain the plan — its instructions take precedence over the planning proposal where they conflict.
+
+Implement now.
+
+1. Read the planning proposal and the orchestrator review comment in full.
 2. Create and check out a feature branch: `git checkout -b issue-$ARGUMENTS-<slug>` where `<slug>` is a short kebab-case description of the change (e.g. `issue-115-unique-version-identity`).
-3. Follow the **Step-by-step plan** exactly, in order.
+3. Follow the **Step-by-step plan** from the proposal, applying any constraints or overrides from the orchestrator review.
 4. Obey the **Domain** block from the issue — stay within ALLOWED scope, do not touch NOT ALLOWED areas.
 5. After completing all steps, run `mix precommit` and fix any failures.
 6. Commit the changes with a message referencing the issue number (e.g. `Closes #$ARGUMENTS`) and push the branch.
