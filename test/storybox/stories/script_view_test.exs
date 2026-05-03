@@ -26,76 +26,40 @@ defmodule Storybox.Stories.ScriptViewTest do
     %{story: story, scene: scene}
   end
 
-  describe "create script_view" do
-    test "creates a script_view with required fields", %{scene: scene} do
+  describe "ensure_for_scene" do
+    test "creates a ScriptView when none exists for the scene", %{scene: scene} do
       assert {:ok, view} =
                Storybox.Stories.ScriptView
-               |> Ash.Changeset.for_create(:create, %{
-                 title: "Opening Scene",
-                 scene_id: scene.id
-               })
-               |> Ash.create()
+               |> Ash.ActionInput.for_action(:ensure_for_scene, %{scene_id: scene.id})
+               |> Ash.run_action()
 
-      assert view.title == "Opening Scene"
       assert view.scene_id == scene.id
-      assert is_nil(view.approved_version_id)
     end
 
-    test "fails without title", %{scene: scene} do
+    test "returns the existing record on a second call (idempotent)", %{scene: scene} do
+      assert {:ok, view1} =
+               Storybox.Stories.ScriptView
+               |> Ash.ActionInput.for_action(:ensure_for_scene, %{scene_id: scene.id})
+               |> Ash.run_action()
+
+      assert {:ok, view2} =
+               Storybox.Stories.ScriptView
+               |> Ash.ActionInput.for_action(:ensure_for_scene, %{scene_id: scene.id})
+               |> Ash.run_action()
+
+      assert view1.id == view2.id
+    end
+
+    test "DB unique index rejects a second ScriptView with the same scene_id", %{scene: scene} do
+      {:ok, _view} =
+        Storybox.Stories.ScriptView
+        |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
+        |> Ash.create()
+
       assert {:error, %Ash.Error.Invalid{}} =
                Storybox.Stories.ScriptView
                |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
                |> Ash.create()
-    end
-
-    test "fails without scene_id" do
-      assert {:error, %Ash.Error.Invalid{}} =
-               Storybox.Stories.ScriptView
-               |> Ash.Changeset.for_create(:create, %{title: "Test"})
-               |> Ash.create()
-    end
-  end
-
-  describe "approve_version action" do
-    test "sets approved_version_id on the view", %{scene: scene} do
-      {:ok, view} =
-        Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{title: "Test Scene", scene_id: scene.id})
-        |> Ash.create()
-
-      {:ok, piece} =
-        Storybox.Stories.ScriptPiece
-        |> Ash.ActionInput.for_action(:create_version, %{
-          scene_id: scene.id,
-          content: "Approved content"
-        })
-        |> Ash.run_action()
-
-      assert {:ok, updated_view} =
-               view
-               |> Ash.Changeset.for_update(:approve_version, %{version_id: piece.id})
-               |> Ash.update()
-
-      assert updated_view.approved_version_id == piece.id
-    end
-  end
-
-  describe "read" do
-    test "returns all script_views", %{scene: scene} do
-      {:ok, view1} =
-        Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{title: "Scene 1", scene_id: scene.id})
-        |> Ash.create()
-
-      {:ok, view2} =
-        Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{title: "Scene 2", scene_id: scene.id})
-        |> Ash.create()
-
-      assert {:ok, views} = Storybox.Stories.ScriptView |> Ash.read()
-      ids = Enum.map(views, & &1.id)
-      assert view1.id in ids
-      assert view2.id in ids
     end
   end
 end

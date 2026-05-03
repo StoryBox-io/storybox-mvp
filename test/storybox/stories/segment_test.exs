@@ -36,7 +36,7 @@ defmodule Storybox.Stories.SegmentTest do
 
     {:ok, script_view} =
       Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{title: "Cottage", scene_id: scene.id})
+      |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
       |> Ash.create()
 
     {:ok, sp1} =

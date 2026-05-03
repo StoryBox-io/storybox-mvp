@@ -92,49 +92,21 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
     end
   end
 
+  # capture action: approved_version_id was removed from ScriptView in issue #94.
+  # Capture now always produces empty entries until the new approval mechanism
+  # (via ScriptViewVersion) is implemented.
   describe "capture action" do
-    test "captures approved versions for all script views in a story", %{
+    test "capture produces empty entries (approval pending redesign via ScriptViewVersion)", %{
       story: story,
       make_scene: make_scene
     } do
       scene1 = make_scene.("Scene 1")
-      scene2 = make_scene.("Scene 2")
+      _scene2 = make_scene.("Scene 2")
 
-      {:ok, view1} =
+      {:ok, _sv1} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{title: "Scene 1", scene_id: scene1.id})
+        |> Ash.Changeset.for_create(:create, %{scene_id: scene1.id})
         |> Ash.create()
-
-      {:ok, view2} =
-        Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{title: "Scene 2", scene_id: scene2.id})
-        |> Ash.create()
-
-      {:ok, version1} =
-        Storybox.Stories.ScriptPiece
-        |> Ash.ActionInput.for_action(:create_version, %{
-          scene_id: scene1.id,
-          content: "Scene one content"
-        })
-        |> Ash.run_action()
-
-      {:ok, version2} =
-        Storybox.Stories.ScriptPiece
-        |> Ash.ActionInput.for_action(:create_version, %{
-          scene_id: scene2.id,
-          content: "Scene two content"
-        })
-        |> Ash.run_action()
-
-      {:ok, view1} =
-        view1
-        |> Ash.Changeset.for_update(:approve_version, %{version_id: version1.id})
-        |> Ash.update()
-
-      {:ok, view2} =
-        view2
-        |> Ash.Changeset.for_update(:approve_version, %{version_id: version2.id})
-        |> Ash.update()
 
       assert {:ok, snapshot} =
                Storybox.Stories.ScriptSnapshot
@@ -146,59 +118,7 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
 
       assert snapshot.name == "Before Workshop"
       assert snapshot.story_id == story.id
-
-      assert snapshot.entries[to_string(view1.id)] == to_string(view1.approved_version_id)
-      assert snapshot.entries[to_string(view2.id)] == to_string(view2.approved_version_id)
-    end
-
-    test "excludes script views with no approved version", %{
-      story: story,
-      make_scene: make_scene
-    } do
-      scene_approved = make_scene.("Approved Scene")
-      scene_unapproved = make_scene.("Unapproved Scene")
-
-      {:ok, view_approved} =
-        Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Approved Scene",
-          scene_id: scene_approved.id
-        })
-        |> Ash.create()
-
-      {:ok, _view_unapproved} =
-        Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: "Unapproved Scene",
-          scene_id: scene_unapproved.id
-        })
-        |> Ash.create()
-
-      {:ok, version} =
-        Storybox.Stories.ScriptPiece
-        |> Ash.ActionInput.for_action(:create_version, %{
-          scene_id: scene_approved.id,
-          content: "Approved scene content"
-        })
-        |> Ash.run_action()
-
-      {:ok, view_approved} =
-        view_approved
-        |> Ash.Changeset.for_update(:approve_version, %{version_id: version.id})
-        |> Ash.update()
-
-      assert {:ok, snapshot} =
-               Storybox.Stories.ScriptSnapshot
-               |> Ash.ActionInput.for_action(:capture, %{
-                 story_id: story.id,
-                 name: "Partial Snapshot"
-               })
-               |> Ash.run_action()
-
-      assert map_size(snapshot.entries) == 1
-
-      assert snapshot.entries[to_string(view_approved.id)] ==
-               to_string(view_approved.approved_version_id)
+      assert snapshot.entries == %{}
     end
 
     test "capture with no script views produces empty entries", %{story: story} do

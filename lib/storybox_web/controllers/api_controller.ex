@@ -103,11 +103,13 @@ defmodule StoryboxWeb.ApiController do
         conn |> put_status(400) |> json(%{error: reason})
 
       {:ok, mode, snapshot_id} ->
-        scene_ids =
+        scenes =
           Storybox.Stories.Scene
           |> Ash.Query.filter(story_id == ^story.id)
           |> Ash.read!(authorize?: false)
-          |> Enum.map(& &1.id)
+
+        scene_ids = Enum.map(scenes, & &1.id)
+        scenes_by_id = Map.new(scenes, &{&1.id, &1})
 
         script_views =
           case scene_ids do
@@ -127,7 +129,7 @@ defmodule StoryboxWeb.ApiController do
             conn |> put_status(404) |> json(%{error: "snapshot not found"})
 
           {:ok, versions_map} ->
-            case build_script_scenes(script_views, versions_map) do
+            case build_script_scenes(script_views, versions_map, scenes_by_id) do
               {:error, :content_unavailable} ->
                 conn |> put_status(503) |> json(%{error: "content unavailable"})
 
@@ -190,6 +192,8 @@ defmodule StoryboxWeb.ApiController do
     {:ok, versions_map}
   end
 
+  # approved_version_id was removed from ScriptView in issue #94; approval redesigned
+  # via ScriptViewVersion. Stub returns nil for all scenes pending the new mechanism.
   defp resolve_script_versions(
          "approved",
          _snapshot_id,
@@ -197,28 +201,7 @@ defmodule StoryboxWeb.ApiController do
          script_views,
          _script_view_ids
        ) do
-    approved_ids =
-      script_views
-      |> Enum.map(& &1.approved_version_id)
-      |> Enum.reject(&is_nil/1)
-
-    pieces_by_id =
-      case approved_ids do
-        [] ->
-          %{}
-
-        ids ->
-          Storybox.Stories.ScriptPiece
-          |> Ash.Query.filter(id in ^ids)
-          |> Ash.read!(authorize?: false)
-          |> Map.new(&{&1.id, &1})
-      end
-
-    versions_map =
-      Map.new(script_views, fn view ->
-        {view.id, pieces_by_id[view.approved_version_id]}
-      end)
-
+    versions_map = Map.new(script_views, fn view -> {view.id, nil} end)
     {:ok, versions_map}
   end
 
@@ -260,9 +243,10 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  defp build_script_scenes(script_views, versions_map) do
+  defp build_script_scenes(script_views, versions_map, scenes_by_id) do
     Enum.reduce_while(script_views, {:ok, %{}}, fn view, {:ok, acc} ->
       piece = versions_map[view.id]
+      scene_record = scenes_by_id[view.scene_id]
 
       case fetch_scene_content(piece) do
         {:error, :content_unavailable} ->
@@ -271,7 +255,7 @@ defmodule StoryboxWeb.ApiController do
         {:ok, content} ->
           scene = %{
             id: view.id,
-            title: view.title,
+            title: scene_record && scene_record.title,
             version: format_version(piece),
             content: content
           }
