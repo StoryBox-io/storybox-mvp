@@ -34,7 +34,9 @@ Report the Actions run URL and tell the user: the planning agent is running and 
 
 ## If a planning proposal EXISTS but NO orchestrator review exists
 
-Tell the user: the plan is awaiting orchestrator review. Do not implement. Stop here.
+Check the **Questions / ambiguities** section of the proposal:
+- If it says `None` — the plan is self-contained. Proceed with implementation.
+- If it lists open questions — tell the user the plan has unresolved questions that need orchestrator review. Do not implement. Stop here.
 
 ---
 
