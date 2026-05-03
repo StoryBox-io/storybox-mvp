@@ -84,7 +84,7 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       Storybox.Stories.SynopsisViewVersion
       |> Ash.Changeset.for_create(:create, %{
         synopsis_view_id: synopsis_view.id,
-        version_number: 1
+        version_number: 2
       })
       |> Ash.create()
 
@@ -92,7 +92,7 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       Storybox.Stories.SynopsisViewVersion
       |> Ash.Changeset.for_create(:create, %{
         synopsis_view_id: synopsis_view.id,
-        version_number: 2
+        version_number: 3
       })
       |> Ash.create()
 
@@ -253,11 +253,11 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
   end
 
   describe "synopsis section" do
-    test "shows v2 as the latest version", %{conn: conn, alice: alice, story: story} do
+    test "shows v3 as the latest version", %{conn: conn, alice: alice, story: story} do
       conn = log_in_user(conn, alice)
       {:ok, _view, html} = live(conn, "/stories/#{story.id}")
 
-      assert html =~ "v2"
+      assert html =~ "v3"
       assert html =~ "Latest"
     end
 
@@ -268,7 +268,7 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       assert html =~ "v1"
     end
 
-    test "shows no synopsis empty state for a story with no synopsis versions", %{
+    test "shows the bootstrap synopsis version (v1) for a freshly created story", %{
       conn: conn,
       alice: alice
     } do
@@ -280,7 +280,8 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       conn = log_in_user(conn, alice)
       {:ok, _view, html} = live(conn, "/stories/#{bare_story.id}")
 
-      assert html =~ "No synopsis versions yet."
+      assert html =~ "v1"
+      refute html =~ "No synopsis versions yet."
     end
   end
 

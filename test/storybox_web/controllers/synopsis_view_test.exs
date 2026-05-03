@@ -3,6 +3,8 @@ defmodule StoryboxWeb.SynopsisViewTest do
 
   alias Storybox.Accounts.ApiToken
 
+  require Ash.Query
+
   setup do
     {:ok, user} =
       Storybox.Accounts.User
@@ -38,6 +40,19 @@ defmodule StoryboxWeb.SynopsisViewTest do
       story: story,
       raw_token: raw_token
     } do
+      # Remove the bootstrap SV (and its SVV) to reach the "no synopsis" state
+      sv =
+        Storybox.Stories.SynopsisView
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.read_one!(authorize?: false)
+
+      Storybox.Stories.SynopsisViewVersion
+      |> Ash.Query.filter(synopsis_view_id == ^sv.id)
+      |> Ash.read!(authorize?: false)
+      |> Enum.each(&Ash.destroy!(&1, authorize?: false))
+
+      Ash.destroy!(sv, authorize?: false)
+
       conn =
         conn
         |> authed(raw_token)
@@ -51,10 +66,16 @@ defmodule StoryboxWeb.SynopsisViewTest do
       story: story,
       raw_token: raw_token
     } do
-      {:ok, _sv} =
+      # Remove the bootstrap SVV to reach the "no versions" state
+      sv =
         Storybox.Stories.SynopsisView
-        |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
-        |> Ash.run_action()
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.read_one!(authorize?: false)
+
+      Storybox.Stories.SynopsisViewVersion
+      |> Ash.Query.filter(synopsis_view_id == ^sv.id)
+      |> Ash.read!(authorize?: false)
+      |> Enum.each(&Ash.destroy!(&1, authorize?: false))
 
       conn =
         conn
@@ -74,11 +95,7 @@ defmodule StoryboxWeb.SynopsisViewTest do
         |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
         |> Ash.run_action()
 
-      {:ok, _vv1} =
-        Storybox.Stories.SynopsisViewVersion
-        |> Ash.Changeset.for_create(:create, %{synopsis_view_id: sv.id, version_number: 1})
-        |> Ash.create()
-
+      # Bootstrap already created v1; create v2 to test that the latest is returned
       {:ok, _vv2} =
         Storybox.Stories.SynopsisViewVersion
         |> Ash.Changeset.for_create(:create, %{synopsis_view_id: sv.id, version_number: 2})

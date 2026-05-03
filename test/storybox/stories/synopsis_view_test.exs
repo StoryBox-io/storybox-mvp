@@ -24,13 +24,15 @@ defmodule Storybox.Stories.SynopsisViewTest do
   end
 
   describe "create" do
-    test "creates a synopsis view for a story", %{story: story} do
-      assert {:ok, view} =
+    # Story.create now bootstraps a SynopsisView automatically. Calling :create
+    # directly on a story that already has a SynopsisView must fail.
+    test "fails when a SynopsisView already exists for the story (bootstrap creates one)", %{
+      story: story
+    } do
+      assert {:error, _} =
                SynopsisView
                |> Ash.Changeset.for_create(:create, %{story_id: story.id})
                |> Ash.create()
-
-      assert view.story_id == story.id
     end
 
     test "fails without story_id" do
@@ -39,22 +41,10 @@ defmodule Storybox.Stories.SynopsisViewTest do
                |> Ash.Changeset.for_create(:create, %{})
                |> Ash.create()
     end
-
-    test "enforces unique constraint — second create for same story fails", %{story: story} do
-      {:ok, _first} =
-        SynopsisView
-        |> Ash.Changeset.for_create(:create, %{story_id: story.id})
-        |> Ash.create()
-
-      assert {:error, _} =
-               SynopsisView
-               |> Ash.Changeset.for_create(:create, %{story_id: story.id})
-               |> Ash.create()
-    end
   end
 
   describe "ensure_for_story action" do
-    test "creates a SynopsisView when none exists for the story", %{story: story} do
+    test "returns the bootstrap SynopsisView for the story", %{story: story} do
       assert {:ok, view} =
                SynopsisView
                |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
@@ -87,14 +77,9 @@ defmodule Storybox.Stories.SynopsisViewTest do
   end
 
   describe "read" do
-    test "returns the synopsis view for a story", %{story: story} do
-      {:ok, view} =
-        SynopsisView
-        |> Ash.Changeset.for_create(:create, %{story_id: story.id})
-        |> Ash.create()
-
+    test "returns the bootstrap synopsis view for a story", %{story: story} do
       assert {:ok, views} = SynopsisView |> Ash.read()
-      assert Enum.any?(views, &(&1.id == view.id))
+      assert Enum.any?(views, &(&1.story_id == story.id))
     end
   end
 end

@@ -144,7 +144,7 @@ defmodule Storybox.Stories.SequenceTest do
       {:ok, story_a_loaded} = Ash.load(story_a, :sequences)
 
       sequence_names = story_a_loaded.sequences |> Enum.map(& &1.name) |> Enum.sort()
-      assert sequence_names == ["Cottage", "Prologue"]
+      assert sequence_names == ["Cottage", "Prologue", "Sequence 1"]
       assert Enum.all?(story_a_loaded.sequences, &(&1.story_id == story_a.id))
     end
   end

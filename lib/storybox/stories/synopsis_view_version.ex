@@ -32,7 +32,7 @@ defmodule Storybox.Stories.SynopsisViewVersion do
   end
 
   actions do
-    defaults [:read]
+    defaults [:read, :destroy]
 
     create :create do
       accept [:synopsis_view_id, :version_number]
