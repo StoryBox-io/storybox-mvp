@@ -87,6 +87,23 @@ If none, write: None.
 
 - [ ] item 1
 - [ ] item 2
+
+### User testing
+
+If the change has no visible behaviour (pure schema, migration, internal logic) write:
+> No user testing required.
+
+If the change affects anything a person could observe (UI, API response, seeded data, view output), write:
+
+**Boot the service:**
+```
+podman compose -f podman-compose.yml up -d
+mix ecto.reset
+```
+
+**Validate:**
+- [ ] step 1 — what to do and what to look for
+- [ ] step 2
 ```
 
 ## Step 4 — Post the proposal
