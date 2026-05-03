@@ -30,7 +30,7 @@ jobs:
         with:
           prompt: ${{ steps.prompt.outputs.value }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: '--allowedTools Bash,Read,Glob,Grep --disallowedTools Edit,Write,NotebookEdit --max-turns 40'
+          claude_args: '--model claude-sonnet-4-6 --allowedTools Bash,Read,Glob,Grep --disallowedTools Edit,Write,NotebookEdit --max-turns 40'
         env:
           ISSUE_NUMBER: ${{ github.event.inputs.issue }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
