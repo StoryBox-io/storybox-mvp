@@ -39,7 +39,7 @@ defmodule StoryboxWeb.PieceVersionsTest do
 
     {:ok, sv_1} =
       Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{title: "Scene", scene_id: scene_1.id})
+      |> Ash.Changeset.for_create(:create, %{scene_id: scene_1.id})
       |> Ash.create(authorize?: false)
 
     {:ok, _sp_v1} =
@@ -59,7 +59,7 @@ defmodule StoryboxWeb.PieceVersionsTest do
 
     {:ok, other_sv} =
       Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{title: "Other Scene", scene_id: other_scene.id})
+      |> Ash.Changeset.for_create(:create, %{scene_id: other_scene.id})
       |> Ash.create(authorize?: false)
 
     %{

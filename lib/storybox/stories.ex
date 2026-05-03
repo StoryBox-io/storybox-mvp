@@ -12,6 +12,7 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.SynopsisPiece
     resource Storybox.Stories.SequencePiece
     resource Storybox.Stories.ScriptView
+    resource Storybox.Stories.ScriptViewVersion
     resource Storybox.Stories.ScriptPiece
     resource Storybox.Stories.Scene
     resource Storybox.Stories.ScriptSnapshot

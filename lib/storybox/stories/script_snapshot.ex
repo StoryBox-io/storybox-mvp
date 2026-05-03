@@ -3,8 +3,6 @@ defmodule Storybox.Stories.ScriptSnapshot do
     domain: Storybox.Stories,
     data_layer: AshPostgres.DataLayer
 
-  require Ash.Query
-
   postgres do
     table "script_snapshots"
     repo Storybox.Repo
@@ -38,26 +36,10 @@ defmodule Storybox.Stories.ScriptSnapshot do
       run fn input, _context ->
         story_id = input.arguments.story_id
 
-        scene_ids =
-          Storybox.Stories.Scene
-          |> Ash.Query.filter(story_id == ^story_id)
-          |> Ash.read!(authorize?: false)
-          |> Enum.map(& &1.id)
-
-        entries =
-          case scene_ids do
-            [] ->
-              %{}
-
-            ids ->
-              Storybox.Stories.ScriptView
-              |> Ash.Query.filter(scene_id in ^ids)
-              |> Ash.read!(authorize?: false)
-              |> Enum.reject(&is_nil(&1.approved_version_id))
-              |> Map.new(fn view ->
-                {to_string(view.id), to_string(view.approved_version_id)}
-              end)
-          end
+        # approved_version_id removed in issue #94; approval redesigned via
+        # ScriptViewVersion. Capture produces empty entries until the new
+        # approval mechanism is implemented.
+        entries = %{}
 
         Storybox.Stories.ScriptSnapshot
         |> Ash.Changeset.for_create(:create, %{

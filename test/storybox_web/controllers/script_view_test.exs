@@ -5,12 +5,14 @@ defmodule StoryboxWeb.ScriptViewTest do
 
   # Shared setup creates the following structure (no slot intermediary):
   #
-  #   story → sv_1 (Cold open) → sp_v1 (EXT. PARK...), sp_v2 (INT. OFFICE...) ★ approved
-  #         → sv_2 (Inciting incident) → sp_v3 (EXT. STREET...)   no approved version
-  #         → sv_3 (The argument) → sp_v4 (INT. KITCHEN...) ★ approved
+  #   story → sv_1 (Cold open) → sp_v1 (EXT. PARK...), sp_v2 (INT. OFFICE...)
+  #         → sv_2 (Inciting incident) → sp_v3 (EXT. STREET...)
+  #         → sv_3 (The argument) → sp_v4 (INT. KITCHEN...)
   #         → sv_4 (Aftermath)   (no versions)
   #   snapshot: entries = {sv_1 → sp_v1}  (pins sv_1 to old v1; others not listed)
   #   other_story: for token isolation tests
+  #
+  #   approved_version_id removed in issue #94; mode=approved returns nil for all scenes
 
   setup do
     {:ok, user} =
@@ -46,7 +48,7 @@ defmodule StoryboxWeb.ScriptViewTest do
 
       {:ok, sv} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{title: title, scene_id: scene.id})
+        |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
         |> Ash.create(authorize?: false)
 
       {sv, scene}
@@ -54,7 +56,7 @@ defmodule StoryboxWeb.ScriptViewTest do
 
     {sv_1, scene_1} = make_sv.("Cold open")
     {sv_2, scene_2} = make_sv.("Inciting incident")
-    {sv_3, scene_3} = make_sv.("The argument")
+    {_sv_3, scene_3} = make_sv.("The argument")
     {sv_4, _scene_4} = make_sv.("Aftermath")
 
     {:ok, sp_v1} =
@@ -73,11 +75,6 @@ defmodule StoryboxWeb.ScriptViewTest do
       })
       |> Ash.run_action(authorize?: false)
 
-    {:ok, sv_1} =
-      sv_1
-      |> Ash.Changeset.for_update(:approve_version, %{version_id: sp_v2.id})
-      |> Ash.update(authorize?: false)
-
     {:ok, _sp_v3} =
       Storybox.Stories.ScriptPiece
       |> Ash.ActionInput.for_action(:create_version, %{
@@ -86,18 +83,13 @@ defmodule StoryboxWeb.ScriptViewTest do
       })
       |> Ash.run_action(authorize?: false)
 
-    {:ok, sp_v4} =
+    {:ok, _sp_v4} =
       Storybox.Stories.ScriptPiece
       |> Ash.ActionInput.for_action(:create_version, %{
         scene_id: scene_3.id,
         content: "INT. KITCHEN - DAY\n\nThey argue."
       })
       |> Ash.run_action(authorize?: false)
-
-    {:ok, sv_3} =
-      sv_3
-      |> Ash.Changeset.for_update(:approve_version, %{version_id: sp_v4.id})
-      |> Ash.update(authorize?: false)
 
     # Snapshot pins sv_1 to sp_v1 (its old version, not the currently approved sp_v2)
     {:ok, snapshot} =
@@ -115,7 +107,6 @@ defmodule StoryboxWeb.ScriptViewTest do
       raw_token: raw_token,
       sv_1: sv_1,
       sv_2: sv_2,
-      sv_3: sv_3,
       sv_4: sv_4,
       scene_1: scene_1,
       sp_v1: sp_v1,
@@ -174,9 +165,12 @@ defmodule StoryboxWeb.ScriptViewTest do
   end
 
   # ── mode=approved ────────────────────────────────────────────────────────────
+  # approved_version_id was removed in issue #94; approval redesigned via
+  # ScriptViewVersion. All scenes return nil version and nil content until
+  # the new approval mechanism is implemented.
 
   describe "GET /api/stories/:story_id/views/script?mode=approved" do
-    test "scenes with an approved version return that version's content", %{
+    test "all scenes return nil version and nil content", %{
       conn: conn,
       story: story,
       raw_token: raw_token
@@ -184,30 +178,12 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn = get_script(conn, story, raw_token, %{mode: "approved"})
       body = json_response(conn, 200)
 
-      cold_open = find_scene(body, "Cold open")
-      assert cold_open["version"]["version_number"] == 2
-      assert cold_open["content"] == "INT. OFFICE - NIGHT\n\nRevised."
+      assert body["mode"] == "approved"
 
-      argument = find_scene(body, "The argument")
-      assert argument["version"]["version_number"] == 1
-      assert argument["content"] == "INT. KITCHEN - DAY\n\nThey argue."
-    end
-
-    test "scene with no approved version returns null version and null content", %{
-      conn: conn,
-      story: story,
-      raw_token: raw_token
-    } do
-      conn = get_script(conn, story, raw_token, %{mode: "approved"})
-      body = json_response(conn, 200)
-
-      inciting = find_scene(body, "Inciting incident")
-      assert inciting["version"] == nil
-      assert inciting["content"] == nil
-
-      aftermath = find_scene(body, "Aftermath")
-      assert aftermath["version"] == nil
-      assert aftermath["content"] == nil
+      Enum.each(body["scenes"], fn scene ->
+        assert scene["version"] == nil
+        assert scene["content"] == nil
+      end)
     end
   end
 
@@ -317,10 +293,9 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn: conn,
       story: story,
       raw_token: raw_token,
-      sv_1: sv_1,
       scene_1: scene_1
     } do
-      {:ok, bad_version} =
+      {:ok, _bad_version} =
         Storybox.Stories.ScriptPiece
         |> Ash.Changeset.for_create(:create, %{
           scene_id: scene_1.id,
@@ -330,11 +305,7 @@ defmodule StoryboxWeb.ScriptViewTest do
         })
         |> Ash.create(authorize?: false)
 
-      sv_1
-      |> Ash.Changeset.for_update(:approve_version, %{version_id: bad_version.id})
-      |> Ash.update(authorize?: false)
-
-      conn = get_script(conn, story, raw_token, %{mode: "approved"})
+      conn = get_script(conn, story, raw_token, %{mode: "latest"})
       assert json_response(conn, 503)["error"] == "content unavailable"
     end
 
