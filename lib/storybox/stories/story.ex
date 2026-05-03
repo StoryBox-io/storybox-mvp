@@ -39,6 +39,7 @@ defmodule Storybox.Stories.Story do
 
     create :create do
       accept [:title, :logline, :controlling_idea, :through_lines, :user_id]
+      change Storybox.Stories.Changes.BootstrapStory
     end
 
     update :update do

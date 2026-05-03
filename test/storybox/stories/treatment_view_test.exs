@@ -126,6 +126,14 @@ defmodule Storybox.Stories.TreatmentViewTest do
         |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
         |> Ash.run_action()
 
+      # Destroy the bootstrap TVV so cut tests exercise first-cut semantics
+      # (falls back to all sequences by inserted_at, producing 4 segments: the
+      # bootstrap "Sequence 1" plus the 3 test sequences added in setup).
+      Storybox.Stories.TreatmentViewVersion
+      |> Ash.Query.filter(treatment_view_id == ^tv.id)
+      |> Ash.read!(authorize?: false)
+      |> Enum.each(&Ash.destroy!(&1, authorize?: false))
+
       %{tv: tv}
     end
 
@@ -139,7 +147,7 @@ defmodule Storybox.Stories.TreatmentViewTest do
       assert vv.version_number == 1
     end
 
-    test "creates exactly 3 Segments — one per Sequence", %{tv: tv} do
+    test "creates exactly 4 Segments — one per Sequence", %{tv: tv} do
       {:ok, vv} =
         Storybox.Stories.TreatmentViewVersion
         |> Ash.ActionInput.for_action(:cut, %{treatment_view_id: tv.id})
@@ -150,7 +158,7 @@ defmodule Storybox.Stories.TreatmentViewTest do
         |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == :treatment_vv)
         |> Ash.read!()
 
-      assert length(segments) == 3
+      assert length(segments) == 4
     end
 
     test "prologue Segment pins prologue-v2", %{tv: tv, seq1: seq1, p1b: p1b} do
