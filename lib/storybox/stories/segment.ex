@@ -202,6 +202,20 @@ defmodule Storybox.Stories.Segment do
     |> Enum.max(fn -> nil end)
   end
 
+  def pin_target_latest_version(%{pin_type: :sequence_vv, pin_id: pin_id})
+      when not is_nil(pin_id) do
+    pinned =
+      Storybox.Stories.SequenceViewVersion
+      |> Ash.Query.filter(id == ^pin_id)
+      |> Ash.read_one!(authorize?: false)
+
+    Storybox.Stories.SequenceViewVersion
+    |> Ash.Query.filter(sequence_view_id == ^pinned.sequence_view_id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(& &1.version_number)
+    |> Enum.max(fn -> nil end)
+  end
+
   def pin_target_latest_version(%{pin_type: pin_type}) do
     raise ArgumentError,
           "pin_target_latest_version/1 is not yet implemented for pin_type #{inspect(pin_type)}"
@@ -211,6 +225,7 @@ defmodule Storybox.Stories.Segment do
   defp pin_module!(:script_piece), do: Storybox.Stories.ScriptPiece
   defp pin_module!(:sequence_piece), do: Storybox.Stories.SequencePiece
   defp pin_module!(:script_vv), do: Storybox.Stories.ScriptViewVersion
+  defp pin_module!(:sequence_vv), do: Storybox.Stories.SequenceViewVersion
 
   defp pin_module!(pin_type) when pin_type in @pin_types do
     raise ArgumentError,
