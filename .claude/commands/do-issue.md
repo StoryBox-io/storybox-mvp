@@ -40,7 +40,7 @@ The plan is approved. Implement it now.
 4. Obey the **Domain** block from the issue — stay within ALLOWED scope, do not touch NOT ALLOWED areas.
 5. After completing all steps, run `mix precommit` and fix any failures.
 6. Commit the changes with a message referencing the issue number (e.g. `Closes #$ARGUMENTS`) and push the branch.
-7. Open a pull request from the feature branch to `main`.
+7. Open a pull request from the feature branch to `main`. The PR body **must** include `Closes #$ARGUMENTS` on its own line so GitHub links and closes the issue on merge.
 8. Check the **User testing** section of the proposal:
    - If it says "No user testing required" — report completion and the commit.
    - If it lists validation steps — print them clearly so the user knows what to verify.
