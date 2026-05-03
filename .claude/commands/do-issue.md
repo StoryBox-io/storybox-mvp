@@ -32,18 +32,15 @@ Report the Actions run URL and tell the user: the planning agent is running and 
 
 ## If a planning proposal EXISTS
 
-Summarise the proposal in this order:
-1. **What changes** — one sentence from the Schema diff or Actions/changes section
-2. **Step-by-step plan** — reproduce the numbered steps verbatim
-3. **User testing** — reproduce the User testing section verbatim (either "No user testing required" or the boot instructions + checklist)
+The plan is approved. Implement it now.
 
-Then tell the user:
-
-> The plan is ready. To implement, start a local agent in the storybox-mvp directory:
->
-> ```
-> cd C:\Users\hidde\Documents\dev\storybox-mvp
-> claude
-> ```
->
-> Open the session and say: **"Implement issue #$ARGUMENTS — follow the planning proposal comment on the issue."**
+1. Read the planning proposal comment in full.
+2. Create and check out a feature branch: `git checkout -b issue-$ARGUMENTS-<slug>` where `<slug>` is a short kebab-case description of the change (e.g. `issue-115-unique-version-identity`).
+3. Follow the **Step-by-step plan** exactly, in order.
+4. Obey the **Domain** block from the issue — stay within ALLOWED scope, do not touch NOT ALLOWED areas.
+5. After completing all steps, run `mix precommit` and fix any failures.
+6. Commit the changes with a message referencing the issue number (e.g. `Closes #$ARGUMENTS`) and push the branch.
+7. Open a pull request from the feature branch to `main`.
+8. Check the **User testing** section of the proposal:
+   - If it says "No user testing required" — report completion and the commit.
+   - If it lists validation steps — print them clearly so the user knows what to verify.
