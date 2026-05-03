@@ -61,6 +61,12 @@ All diagrams must use this init block for dark/light mode compatibility:
 
 Place diagrams inline in the relevant section (e.g. a class diagram in **Schema diff**, a sequence diagram in **Step-by-step plan**).
 
+**Mermaid syntax rules — avoid parse errors:**
+- Any label containing a colon (e.g. Elixir atoms like `:script_vv`, field values like `type: :foo`) **must be wrapped in double quotes**: `"view_version_type: :script_vv"`
+- Any label containing `()`, `<>`, `[]`, or `{` must also be quoted
+- In sequence diagrams, note text with colons must be quoted: `Note right of A: "key: value"`
+- Test your diagram mentally: if a token could be mistaken for a Mermaid keyword or separator, quote it
+
 ```
 ## Planning proposal
 
