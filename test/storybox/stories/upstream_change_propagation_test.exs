@@ -7,7 +7,6 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
     Character,
     Scene,
     ScriptPiece,
-    ScriptView,
     Story,
     UpstreamChange,
     World
@@ -43,16 +42,11 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
       |> Ash.Changeset.for_create(:create, %{title: "Scene 1", story_id: story.id})
       |> Ash.create()
 
-    {:ok, script_view} =
-      ScriptView
-      |> Ash.Changeset.for_create(:create, %{title: "Scene 1", scene_id: scene.id})
-      |> Ash.create()
-
     {:ok, script_piece} =
       ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        script_view_id: script_view.id,
-        content_uri: "storybox://stories/#{story.id}/scenes/#{script_view.id}/v1",
+        scene_id: scene.id,
+        content_uri: Storybox.Storage.uri_for_script_piece(scene.id, 1),
         version_number: 1
       })
       |> Ash.create()
@@ -66,17 +60,6 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
   end
 
   describe "story update propagation" do
-    test "marks all script_pieces stale", %{story: story, script_piece: sp} do
-      assert sp.upstream_status == :current
-
-      story
-      |> Ash.Changeset.for_update(:update, %{title: "Updated Title"})
-      |> Ash.update!()
-
-      updated = Ash.get!(ScriptPiece, sp.id)
-      assert updated.upstream_status == :stale
-    end
-
     test "creates UpstreamChange for script_piece with component_type :story", %{
       story: story,
       script_piece: sp
@@ -102,15 +85,6 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
   end
 
   describe "character update propagation" do
-    test "marks script_pieces stale", %{character: character, script_piece: sp} do
-      character
-      |> Ash.Changeset.for_update(:update, %{essence: "Brave"})
-      |> Ash.update!()
-
-      updated = Ash.get!(ScriptPiece, sp.id)
-      assert updated.upstream_status == :stale
-    end
-
     test "creates UpstreamChange with component_type :character", %{
       character: character,
       script_piece: sp
@@ -132,15 +106,6 @@ defmodule Storybox.Stories.UpstreamChangePropagationTest do
   end
 
   describe "world update propagation" do
-    test "marks script_pieces stale", %{world: world, script_piece: sp} do
-      world
-      |> Ash.Changeset.for_update(:update, %{rules: "Magic is real"})
-      |> Ash.update!()
-
-      updated = Ash.get!(ScriptPiece, sp.id)
-      assert updated.upstream_status == :stale
-    end
-
     test "creates UpstreamChange with component_type :world", %{
       world: world,
       script_piece: sp

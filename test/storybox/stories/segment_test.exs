@@ -40,17 +40,17 @@ defmodule Storybox.Stories.SegmentTest do
       |> Ash.create()
 
     {:ok, sp1} =
-      Storybox.Stories.ScriptView
+      Storybox.Stories.ScriptPiece
       |> Ash.ActionInput.for_action(:create_version, %{
-        script_view_id: script_view.id,
+        scene_id: scene.id,
         content: "INT. COTTAGE - DAY\n\nThe witch stirs."
       })
       |> Ash.run_action()
 
     {:ok, sp2} =
-      Storybox.Stories.ScriptView
+      Storybox.Stories.ScriptPiece
       |> Ash.ActionInput.for_action(:create_version, %{
-        script_view_id: script_view.id,
+        scene_id: scene.id,
         content: "INT. COTTAGE - DAY\n\nThe witch stirs the cauldron."
       })
       |> Ash.run_action()
@@ -330,7 +330,7 @@ defmodule Storybox.Stories.SegmentTest do
 
     test "reflects newer versions in the same lineage (real staleness signal)", %{
       vv_id: vv_id,
-      script_view: script_view,
+      scene: scene,
       sp2: sp2
     } do
       {:ok, segment} =
@@ -346,9 +346,9 @@ defmodule Storybox.Stories.SegmentTest do
         |> Ash.create()
 
       {:ok, sp3} =
-        Storybox.Stories.ScriptView
+        Storybox.Stories.ScriptPiece
         |> Ash.ActionInput.for_action(:create_version, %{
-          script_view_id: script_view.id,
+          scene_id: scene.id,
           content: "INT. COTTAGE - DAY\n\nThe witch stirs the cauldron faster."
         })
         |> Ash.run_action()

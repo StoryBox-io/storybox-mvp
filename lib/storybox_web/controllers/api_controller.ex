@@ -165,16 +165,27 @@ defmodule StoryboxWeb.ApiController do
 
   defp parse_script_mode(_), do: {:error, "mode is required"}
 
-  defp resolve_script_versions("latest", _snapshot_id, _story_id, _script_views, script_view_ids) do
+  defp resolve_script_versions("latest", _snapshot_id, _story_id, script_views, _script_view_ids) do
+    scene_ids = Enum.map(script_views, & &1.scene_id)
+
     all_pieces =
-      Storybox.Stories.ScriptPiece
-      |> Ash.Query.filter(script_view_id in ^script_view_ids)
-      |> Ash.read!(authorize?: false)
+      case scene_ids do
+        [] ->
+          []
+
+        ids ->
+          Storybox.Stories.ScriptPiece
+          |> Ash.Query.filter(scene_id in ^ids)
+          |> Ash.read!(authorize?: false)
+      end
+
+    latest_by_scene =
+      all_pieces
+      |> Enum.group_by(& &1.scene_id)
+      |> Map.new(fn {scene_id, ps} -> {scene_id, Enum.max_by(ps, & &1.version_number)} end)
 
     versions_map =
-      all_pieces
-      |> Enum.group_by(& &1.script_view_id)
-      |> Map.new(fn {id, ps} -> {id, Enum.max_by(ps, & &1.version_number)} end)
+      Map.new(script_views, fn view -> {view.id, latest_by_scene[view.scene_id]} end)
 
     {:ok, versions_map}
   end
@@ -300,10 +311,10 @@ defmodule StoryboxWeb.ApiController do
         end
 
       if script_view && owner do
-        case Storybox.Stories.ScriptView
+        case Storybox.Stories.ScriptPiece
              |> Ash.ActionInput.for_action(:create_version, %{
                content: content,
-               script_view_id: script_view.id
+               scene_id: script_view.scene_id
              })
              |> Ash.run_action(authorize?: false) do
           {:ok, piece} ->
@@ -333,22 +344,10 @@ defmodule StoryboxWeb.ApiController do
           []
 
         ids ->
-          Storybox.Stories.ScriptView
+          Storybox.Stories.ScriptPiece
           |> Ash.Query.filter(scene_id in ^ids)
           |> Ash.read!(authorize?: false)
           |> Enum.map(& &1.id)
-          |> then(fn sv_ids ->
-            case sv_ids do
-              [] ->
-                []
-
-              sv_ids ->
-                Storybox.Stories.ScriptPiece
-                |> Ash.Query.filter(script_view_id in ^sv_ids)
-                |> Ash.read!(authorize?: false)
-                |> Enum.map(& &1.id)
-            end
-          end)
       end
 
     changes =
@@ -385,7 +384,6 @@ defmodule StoryboxWeb.ApiController do
     %{
       id: piece.id,
       version_number: piece.version_number,
-      upstream_status: piece.upstream_status,
       weights: piece.weights,
       inserted_at: piece.inserted_at
     }

@@ -111,17 +111,17 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
         |> Ash.create()
 
       {:ok, version1} =
-        Storybox.Stories.ScriptView
+        Storybox.Stories.ScriptPiece
         |> Ash.ActionInput.for_action(:create_version, %{
-          script_view_id: view1.id,
+          scene_id: scene1.id,
           content: "Scene one content"
         })
         |> Ash.run_action()
 
       {:ok, version2} =
-        Storybox.Stories.ScriptView
+        Storybox.Stories.ScriptPiece
         |> Ash.ActionInput.for_action(:create_version, %{
-          script_view_id: view2.id,
+          scene_id: scene2.id,
           content: "Scene two content"
         })
         |> Ash.run_action()
@@ -175,9 +175,9 @@ defmodule Storybox.Stories.ScriptSnapshotTest do
         |> Ash.create()
 
       {:ok, version} =
-        Storybox.Stories.ScriptView
+        Storybox.Stories.ScriptPiece
         |> Ash.ActionInput.for_action(:create_version, %{
-          script_view_id: view_approved.id,
+          scene_id: scene_approved.id,
           content: "Approved scene content"
         })
         |> Ash.run_action()

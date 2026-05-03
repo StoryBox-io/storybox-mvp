@@ -20,6 +20,7 @@ defmodule Storybox.Stories.Scene do
   relationships do
     belongs_to :story, Storybox.Stories.Story, allow_nil?: false, public?: true
     has_one :script_view, Storybox.Stories.ScriptView, public?: true
+    has_many :script_pieces, Storybox.Stories.ScriptPiece, public?: true
   end
 
   actions do

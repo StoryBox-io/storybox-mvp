@@ -5,7 +5,6 @@ defmodule Storybox.Stories.Notifiers.PropagateUpstreamChange do
 
   alias Storybox.Stories.{
     Scene,
-    ScriptView,
     ScriptPiece,
     UpstreamChange
   }
@@ -40,39 +39,28 @@ defmodule Storybox.Stories.Notifiers.PropagateUpstreamChange do
       |> Ash.read!()
       |> Enum.map(& &1.id)
 
-    script_views =
+    script_pieces =
       case scene_ids do
         [] ->
           []
 
         ids ->
-          ScriptView
+          ScriptPiece
           |> Ash.Query.filter(scene_id in ^ids)
           |> Ash.read!()
       end
 
-    for script_view <- script_views do
-      script_pieces =
-        ScriptPiece
-        |> Ash.Query.filter(script_view_id == ^script_view.id)
-        |> Ash.read!()
-
-      for sp <- script_pieces do
-        sp
-        |> Ash.Changeset.for_update(:mark_stale, %{})
-        |> Ash.update!()
-
-        UpstreamChange
-        |> Ash.Changeset.for_create(:create, %{
-          piece_version_type: :script_piece,
-          piece_version_id: sp.id,
-          component_type: component_type,
-          component_id: component_id,
-          version_before: version_before,
-          version_after: version_after
-        })
-        |> Ash.create!()
-      end
+    for sp <- script_pieces do
+      UpstreamChange
+      |> Ash.Changeset.for_create(:create, %{
+        piece_version_type: :script_piece,
+        piece_version_id: sp.id,
+        component_type: component_type,
+        component_id: component_id,
+        version_before: version_before,
+        version_after: version_after
+      })
+      |> Ash.create!()
     end
 
     :ok

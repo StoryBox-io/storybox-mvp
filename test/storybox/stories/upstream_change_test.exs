@@ -21,16 +21,11 @@ defmodule Storybox.Stories.UpstreamChangeTest do
       |> Ash.Changeset.for_create(:create, %{title: "Scene 1", story_id: story.id})
       |> Ash.create()
 
-    {:ok, script_view} =
-      Storybox.Stories.ScriptView
-      |> Ash.Changeset.for_create(:create, %{title: "Scene 1", scene_id: scene.id})
-      |> Ash.create()
-
     {:ok, script_piece} =
       Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        script_view_id: script_view.id,
-        content_uri: "storybox://stories/#{story.id}/scenes/#{script_view.id}/v1",
+        scene_id: scene.id,
+        content_uri: Storybox.Storage.uri_for_script_piece(scene.id, 1),
         version_number: 1
       })
       |> Ash.create()
