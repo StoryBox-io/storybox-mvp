@@ -19,5 +19,7 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.UpstreamChange
     resource Storybox.Stories.TreatmentView
     resource Storybox.Stories.TreatmentViewVersion
+    resource Storybox.Stories.SequenceView
+    resource Storybox.Stories.SequenceViewVersion
   end
 end

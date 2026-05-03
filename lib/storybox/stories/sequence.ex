@@ -19,6 +19,7 @@ defmodule Storybox.Stories.Sequence do
 
   relationships do
     belongs_to :story, Storybox.Stories.Story, allow_nil?: false, public?: true
+    has_one :sequence_view, Storybox.Stories.SequenceView, public?: true
   end
 
   identities do

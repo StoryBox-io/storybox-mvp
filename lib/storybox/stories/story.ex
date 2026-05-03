@@ -32,6 +32,7 @@ defmodule Storybox.Stories.Story do
     has_many :scenes, Storybox.Stories.Scene, public?: true
 
     has_one :treatment_view, Storybox.Stories.TreatmentView, public?: true
+    has_many :sequence_views, Storybox.Stories.SequenceView, public?: true
   end
 
   actions do
