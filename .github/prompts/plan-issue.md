@@ -29,6 +29,38 @@ Use only: `Read`, `Glob`, `Grep`, `Bash` (read-only shell commands — `mix`, `g
 
 Structure the proposal as follows. Be concrete — name exact files, function names, and migration names.
 
+### Mermaid diagrams
+
+Include Mermaid diagrams **where they add clarity** — do not force one into every proposal. Use:
+- **Class diagram** — when the change touches resource relationships or adds/removes fields
+- **Sequence diagram** — when the change involves a multi-step action, a pipeline, or an inter-resource call chain
+- **Flowchart** — when the change involves branching logic or a decision tree
+
+All diagrams must use this init block for dark/light mode compatibility:
+
+````
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#3d6b8e',
+  'primaryTextColor': '#e8edf2',
+  'primaryBorderColor': '#5a8fb5',
+  'lineColor': '#7aafd4',
+  'secondaryColor': '#2a4d66',
+  'tertiaryColor': '#1e3347',
+  'background': 'transparent',
+  'mainBkg': '#3d6b8e',
+  'nodeBorder': '#5a8fb5',
+  'clusterBkg': '#2a4d66',
+  'titleColor': '#e8edf2',
+  'edgeLabelBackground': '#2a4d66',
+  'fontFamily': 'ui-monospace, monospace'
+}}}%%
+...
+```
+````
+
+Place diagrams inline in the relevant section (e.g. a class diagram in **Schema diff**, a sequence diagram in **Step-by-step plan**).
+
 ```
 ## Planning proposal
 
