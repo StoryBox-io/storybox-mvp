@@ -21,5 +21,7 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.TreatmentViewVersion
     resource Storybox.Stories.SequenceView
     resource Storybox.Stories.SequenceViewVersion
+    resource Storybox.Stories.StoryScriptView
+    resource Storybox.Stories.StoryScriptViewVersion
   end
 end
