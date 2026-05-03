@@ -125,7 +125,4 @@ These are deferred. The MVP validates the story model and agentic workflow befor
 
 ## Docs
 
-- [Story Model](docs/story_model.md)
-- [Data Model](docs/data_model.md)
-- [API Spec](docs/api.md)
 - [Dev Setup](docs/dev_setup.md)
