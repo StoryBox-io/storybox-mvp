@@ -106,6 +106,28 @@ defmodule Storybox.Stories.ScriptPieceTest do
     end
   end
 
+  describe "unique_version_per_scene identity" do
+    test "rejects a duplicate (scene_id, version_number) via :create", %{scene_01: scene_01} do
+      {:ok, _} =
+        Storybox.Stories.ScriptPiece
+        |> Ash.Changeset.for_create(:create, %{
+          scene_id: scene_01.id,
+          content_uri: Storybox.Storage.uri_for_script_piece(scene_01.id, 1),
+          version_number: 1
+        })
+        |> Ash.create()
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Storybox.Stories.ScriptPiece
+               |> Ash.Changeset.for_create(:create, %{
+                 scene_id: scene_01.id,
+                 content_uri: Storybox.Storage.uri_for_script_piece(scene_01.id, 1),
+                 version_number: 1
+               })
+               |> Ash.create()
+    end
+  end
+
   describe "create_version action" do
     test "scene_01 v1 with provenance — version 1, URI under scene_01, provenance set", %{
       scene_01: scene_01,
