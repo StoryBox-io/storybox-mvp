@@ -170,13 +170,142 @@ if little_witch = all_stories["Little Witch"] do
     IO.puts("  Created character: #{name}")
   end
 
+  # -- Sequences -------------------------------------------------------------
+  # Mirrored from pandaChest/projects/story/LittleWitch (orchestrator-owned).
+  # Order matters: SynopsisViewVersion.cut falls back to story.sequences ordered
+  # by inserted_at when no TreatmentViewVersion exists yet, so we insert in
+  # story order (Act I → Act III).
+
+  existing_sequence_slugs =
+    Storybox.Stories.Sequence
+    |> Ash.Query.filter(story_id == ^little_witch.id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(& &1.slug)
+
+  sequences_to_seed = [
+    {"prologue", "Prologue"},
+    {"cottage", "The Cottage"},
+    {"summoning", "The Summoning"},
+    {"settling", "Settling — Silas's Way"},
+    {"kestrel_game", "Kestrel's Game"},
+    {"reckoning", "Reckoning — Kestrel's Choice"}
+  ]
+
+  sequences_by_slug =
+    for {slug, name} <- sequences_to_seed, into: %{} do
+      seq =
+        if slug not in existing_sequence_slugs do
+          s =
+            Storybox.Stories.Sequence
+            |> Ash.Changeset.for_create(:create, %{
+              story_id: little_witch.id,
+              name: name,
+              slug: slug
+            })
+            |> Ash.create!(authorize?: false)
+
+          IO.puts("  Created sequence: #{name}")
+          s
+        else
+          Storybox.Stories.Sequence
+          |> Ash.Query.filter(story_id == ^little_witch.id and slug == ^slug)
+          |> Ash.read_one!(authorize?: false)
+        end
+
+      {slug, seq}
+    end
+
+  # -- SynopsisPieces --------------------------------------------------------
+  # Mirrored from LittleWitch/synopsis-{slug}-v1.fountain. Content is hand-
+  # maintained by the orchestrator; when LittleWitch changes, update both.
+
+  synopsis_pieces_v1 = [
+    {"prologue",
+     """
+     ~ Years before the story begins. Silas is revealed in action. A child is found. The question of why is not answered.
+
+     Years before the story begins. The Alderman's soldiers hunt Order remnants on a forest road. Silas — a former Order member living in hiding — intervenes to protect a family and reveals who she was before. She acts with full training, borrows fire from the Book once, and registers the cost immediately. The family does not survive. A small girl is left alone in the road. Silas takes her home. The question of what she saw in that moment sits in the prologue like an ember. It will not be answered here.
+     """},
+    {"cottage",
+     """
+     ~ Silas and Fleur's life together. The incomplete training. The Book. Silas is taken. Her last words crack open the question Fleur has never been allowed to finish.
+
+     Fleur is a young orphan raised in isolation by Silas, a healer and former member of the Order of Flame. Silas trained Fleur only in healing — never the full, dangerous discipline of demonkin — because watching Kestrel approach the threshold of consumption broke something in Silas. Fleur is capable and restless, unable to fully believe the work is enough. When the Alderman's men find Silas, she presses the chest key into Fleur's hands, says the thing she has been unable to say — "You are what I should have been" — and walks out to meet them. Fleur is left alone with a key in her hand.
+     """},
+    {"summoning",
+     """
+     ~ The hope that she might be the Chosen One finally has room to breathe. The ritual goes wrong. The demon finds the hope already inside her and names it.
+
+     The hope that she might be the Chosen One — absorbed from prophecy-carved walls and travellers' stories her whole life, with no one left to keep it in check — finally has room to breathe. She opens the Book of Demons. The ritual goes catastrophically wrong, burning the cottage to ash. In the ruins, a diminished Flame Demon bargains for survival by finding the hope already inside her and naming it. She shelters him in a lantern and walks toward the capital.
+     """},
+    {"settling",
+     """
+     ~ In the capital, Fleur does what Silas taught her. It works. Then the first shortcut. The pattern is set.
+
+     In the capital, Fleur follows Silas's example — working among the sick and poor, building trust through honest effort. She builds a community not through spectacle but through presence. But each time she leans on the demon for help, the honest work shrinks and his influence grows. The pattern is set.
+     """},
+    {"kestrel_game",
+     """
+     ~ The Alderman sees opportunity. In the dungeon, Kestrel reads Silas in Fleur's training gaps and plays both sides.
+
+     When the Alderman recognises her, he sees not a witch to burn but the Chosen One his prophecy promised. He gives her access to the city's prisoners — including Kestrel, the Order's former war leader, imprisoned for a decade. Kestrel plays both sides. She tips off the Alderman about the demon, redirecting his plan toward a coronation. She works Fleur — filling the void Silas left, framing the demon as a tool of liberation, weaponising the truth about Silas's flight to crack Fleur's faith in her guardian's restraint. She steers Fleur toward the fire the same way the war once steered her. She knows what she is doing. She does it anyway.
+     """},
+    {"reckoning",
+     """
+     ~ Fleur holds. Kestrel sees what she has done. Not redemption — reckoning. The truth is told. Fleur stands at the beginning of her real training.
+
+     At the coronation, the demon erupts. The city burns. But Fleur does not collapse — in the worst moment of her life, Silas's teaching reasserts itself: not the knowledge Silas withheld, but the lesson she gave every day without words. Fleur throws herself between the fire and the people, body and hands and voice, with no power but her own.
+
+     Kestrel watches this and the calculation breaks. She recognises what she has done — specifically, not in the abstract. Every gap in Fleur's training is a threshold Silas pulled back from, and the pattern of those pullbacks is the outline of Kestrel herself. She reaches into the fire and contains the demon the way it should always have been done: with full discipline, at full cost. Then she tells Fleur the truth. There is no Chosen One. There never was. The only power that is real is earned — slowly, at each of the thresholds Silas could not push her through.
+
+     The demon is sealed. Kestrel is diminished. The Alderman's political machinery grinds on. The world has not been saved by a single act of fire. What has changed is Fleur. Scarred and stripped of every illusion, she stands at the beginning of her real training.
+     """}
+  ]
+
+  for {slug, content} <- synopsis_pieces_v1 do
+    sequence = Map.fetch!(sequences_by_slug, slug)
+
+    existing =
+      Storybox.Stories.SynopsisPiece
+      |> Ash.Query.filter(sequence_id == ^sequence.id)
+      |> Ash.read!(authorize?: false)
+
+    if existing == [] do
+      Storybox.Stories.SynopsisPiece
+      |> Ash.ActionInput.for_action(:create_version, %{
+        story_id: little_witch.id,
+        sequence_id: sequence.id,
+        content: String.trim(content)
+      })
+      |> Ash.run_action!(authorize?: false)
+
+      IO.puts("  Created synopsis v1: #{slug}")
+    end
+  end
+
   # -- SynopsisView (logical header — one per story) -------------------------
-  {:ok, _synopsis_view} =
+  {:ok, synopsis_view} =
     Storybox.Stories.SynopsisView
     |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: little_witch.id})
     |> Ash.run_action(authorize?: false)
 
   IO.puts("  SynopsisView ready for Little Witch")
+
+  # -- SynopsisViewVersion v1 (cut) ------------------------------------------
+  # Pins the latest SynopsisPiece per Sequence as a Segment.
+
+  existing_svv =
+    Storybox.Stories.SynopsisViewVersion
+    |> Ash.Query.filter(synopsis_view_id == ^synopsis_view.id)
+    |> Ash.read!(authorize?: false)
+
+  if existing_svv == [] do
+    Storybox.Stories.SynopsisViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: synopsis_view.id})
+    |> Ash.run_action!(authorize?: false)
+
+    IO.puts("  Cut SynopsisViewVersion v1 for Little Witch")
+  end
 
   # -- Scene entities + ScriptViews + ScriptPieces ----------------------------
   # Five scenes seeded directly under the story (no slot intermediary).
