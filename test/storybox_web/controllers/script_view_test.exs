@@ -49,26 +49,26 @@ defmodule StoryboxWeb.ScriptViewTest do
         |> Ash.Changeset.for_create(:create, %{title: title, scene_id: scene.id})
         |> Ash.create(authorize?: false)
 
-      sv
+      {sv, scene}
     end
 
-    sv_1 = make_sv.("Cold open")
-    sv_2 = make_sv.("Inciting incident")
-    sv_3 = make_sv.("The argument")
-    sv_4 = make_sv.("Aftermath")
+    {sv_1, scene_1} = make_sv.("Cold open")
+    {sv_2, scene_2} = make_sv.("Inciting incident")
+    {sv_3, scene_3} = make_sv.("The argument")
+    {sv_4, _scene_4} = make_sv.("Aftermath")
 
     {:ok, sp_v1} =
-      Storybox.Stories.ScriptView
+      Storybox.Stories.ScriptPiece
       |> Ash.ActionInput.for_action(:create_version, %{
-        script_view_id: sv_1.id,
+        scene_id: scene_1.id,
         content: "EXT. PARK - DAY\n\nFirst draft."
       })
       |> Ash.run_action(authorize?: false)
 
     {:ok, sp_v2} =
-      Storybox.Stories.ScriptView
+      Storybox.Stories.ScriptPiece
       |> Ash.ActionInput.for_action(:create_version, %{
-        script_view_id: sv_1.id,
+        scene_id: scene_1.id,
         content: "INT. OFFICE - NIGHT\n\nRevised."
       })
       |> Ash.run_action(authorize?: false)
@@ -79,17 +79,17 @@ defmodule StoryboxWeb.ScriptViewTest do
       |> Ash.update(authorize?: false)
 
     {:ok, _sp_v3} =
-      Storybox.Stories.ScriptView
+      Storybox.Stories.ScriptPiece
       |> Ash.ActionInput.for_action(:create_version, %{
-        script_view_id: sv_2.id,
+        scene_id: scene_2.id,
         content: "EXT. STREET - DAY\n\nSomething happens."
       })
       |> Ash.run_action(authorize?: false)
 
     {:ok, sp_v4} =
-      Storybox.Stories.ScriptView
+      Storybox.Stories.ScriptPiece
       |> Ash.ActionInput.for_action(:create_version, %{
-        script_view_id: sv_3.id,
+        scene_id: scene_3.id,
         content: "INT. KITCHEN - DAY\n\nThey argue."
       })
       |> Ash.run_action(authorize?: false)
@@ -117,6 +117,7 @@ defmodule StoryboxWeb.ScriptViewTest do
       sv_2: sv_2,
       sv_3: sv_3,
       sv_4: sv_4,
+      scene_1: scene_1,
       sp_v1: sp_v1,
       sp_v2: sp_v2,
       snapshot: snapshot
@@ -316,16 +317,15 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn: conn,
       story: story,
       raw_token: raw_token,
-      sv_1: sv_1
+      sv_1: sv_1,
+      scene_1: scene_1
     } do
       {:ok, bad_version} =
         Storybox.Stories.ScriptPiece
         |> Ash.Changeset.for_create(:create, %{
-          script_view_id: sv_1.id,
-          content_uri:
-            "storybox://stories/#{story.id}/scenes/#{sv_1.id}/v999_nonexistent.fountain",
+          scene_id: scene_1.id,
+          content_uri: "storybox://scenes/#{scene_1.id}/script_pieces/v999_nonexistent.fountain",
           version_number: 99,
-          upstream_status: :current,
           weights: %{}
         })
         |> Ash.create(authorize?: false)

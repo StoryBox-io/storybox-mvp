@@ -336,16 +336,15 @@ if little_witch = all_stories["Little Witch"] do
         |> Ash.create(authorize?: false)
 
       if content do
-        uri = Storybox.Storage.uri_for_scene(story_id, script_view.id, 1)
+        uri = Storybox.Storage.uri_for_script_piece(scene.id, 1)
         Storybox.Storage.put_content(uri, String.trim(content))
 
         {:ok, v1} =
           Storybox.Stories.ScriptPiece
           |> Ash.Changeset.for_create(:create, %{
-            script_view_id: script_view.id,
+            scene_id: scene.id,
             content_uri: uri,
             version_number: 1,
-            upstream_status: :current,
             weights: %{"preference" => 0.9, "theme" => 0.8}
           })
           |> Ash.create(authorize?: false)
@@ -480,7 +479,7 @@ if little_witch = all_stories["Little Witch"] do
 
     # Add a v2 to the first scene (cottage) so snapshot/diff tests have something to compare.
     # v1 stays approved; v2 is unapproved.
-    v2_uri = Storybox.Storage.uri_for_scene(little_witch.id, cottage_script_view.id, 2)
+    v2_uri = Storybox.Storage.uri_for_script_piece(cottage_scene.id, 2)
 
     Storybox.Storage.put_content(v2_uri, """
     INT. COTTAGE - NIGHT
@@ -510,15 +509,14 @@ if little_witch = all_stories["Little Witch"] do
     {:ok, _v2} =
       Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        script_view_id: cottage_script_view.id,
+        scene_id: cottage_scene.id,
         content_uri: v2_uri,
         version_number: 2,
-        upstream_status: :current,
         weights: %{}
       })
       |> Ash.create(authorize?: false)
 
-    _ = cottage_scene
+    _ = cottage_script_view
 
     IO.puts(
       "  Created 5 scenes for Little Witch (cottage has v1 approved + v2 draft; last scene empty)"

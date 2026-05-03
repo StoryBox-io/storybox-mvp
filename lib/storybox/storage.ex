@@ -5,8 +5,8 @@ defmodule Storybox.Storage do
     "storybox://stories/#{story_id}/sequences/#{sequence_id}/v#{version_number}.fountain"
   end
 
-  def uri_for_scene(story_id, piece_id, version_number) do
-    "storybox://stories/#{story_id}/scenes/#{piece_id}/v#{version_number}.fountain"
+  def uri_for_script_piece(scene_id, version_number) do
+    "storybox://scenes/#{scene_id}/script_pieces/v#{version_number}.fountain"
   end
 
   def uri_for_synopsis(story_id, version_number) do

@@ -168,7 +168,7 @@ defmodule Storybox.Stories.Segment do
       |> Ash.read_one!(authorize?: false)
 
     Storybox.Stories.ScriptPiece
-    |> Ash.Query.filter(script_view_id == ^pinned.script_view_id)
+    |> Ash.Query.filter(scene_id == ^pinned.scene_id)
     |> Ash.read!(authorize?: false)
     |> Enum.map(& &1.version_number)
     |> Enum.max(fn -> nil end)

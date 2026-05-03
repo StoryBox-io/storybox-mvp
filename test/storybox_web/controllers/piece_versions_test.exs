@@ -45,10 +45,9 @@ defmodule StoryboxWeb.PieceVersionsTest do
     {:ok, _sp_v1} =
       Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        script_view_id: sv_1.id,
-        content_uri: "storybox://test/scene/v1.fountain",
+        scene_id: scene_1.id,
+        content_uri: Storybox.Storage.uri_for_script_piece(scene_1.id, 1),
         version_number: 1,
-        upstream_status: :current,
         weights: %{}
       })
       |> Ash.create(authorize?: false)
@@ -87,7 +86,7 @@ defmodule StoryboxWeb.PieceVersionsTest do
 
       body = json_response(conn, 201)
       assert body["version_number"]
-      assert body["upstream_status"] == "current"
+      refute Map.has_key?(body, "upstream_status")
       assert body["weights"] == %{}
       assert body["id"]
     end

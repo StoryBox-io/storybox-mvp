@@ -13,10 +13,10 @@ defmodule Storybox.StorageTest do
     end
   end
 
-  describe "uri_for_scene/3" do
+  describe "uri_for_script_piece/2" do
     test "builds correct URI" do
-      assert Storage.uri_for_scene(@story_id, @piece_id, 2) ==
-               "storybox://stories/#{@story_id}/scenes/#{@piece_id}/v2.fountain"
+      assert Storage.uri_for_script_piece(@piece_id, 2) ==
+               "storybox://scenes/#{@piece_id}/script_pieces/v2.fountain"
     end
   end
 

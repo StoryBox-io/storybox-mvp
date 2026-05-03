@@ -39,7 +39,7 @@ defmodule StoryboxWeb.UpstreamChangesTest do
       |> Ash.Changeset.for_create(:create, %{title: "Scene 1", story_id: story.id})
       |> Ash.create(authorize?: false)
 
-    {:ok, sv_1} =
+    {:ok, _sv_1} =
       Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{title: "Scene 1", scene_id: scene_1.id})
       |> Ash.create(authorize?: false)
@@ -47,10 +47,9 @@ defmodule StoryboxWeb.UpstreamChangesTest do
     {:ok, sp_v1} =
       Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        script_view_id: sv_1.id,
-        content_uri: "storybox://test/scene/v1.fountain",
+        scene_id: scene_1.id,
+        content_uri: Storybox.Storage.uri_for_script_piece(scene_1.id, 1),
         version_number: 1,
-        upstream_status: :stale,
         weights: %{}
       })
       |> Ash.create(authorize?: false)
@@ -58,10 +57,9 @@ defmodule StoryboxWeb.UpstreamChangesTest do
     {:ok, sp_v2} =
       Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        script_view_id: sv_1.id,
-        content_uri: "storybox://test/scene/v2.fountain",
+        scene_id: scene_1.id,
+        content_uri: Storybox.Storage.uri_for_script_piece(scene_1.id, 2),
         version_number: 2,
-        upstream_status: :stale,
         weights: %{}
       })
       |> Ash.create(authorize?: false)
@@ -101,7 +99,7 @@ defmodule StoryboxWeb.UpstreamChangesTest do
       |> Ash.Changeset.for_create(:create, %{title: "Other Scene", story_id: other_story.id})
       |> Ash.create(authorize?: false)
 
-    {:ok, other_sv} =
+    {:ok, _other_sv} =
       Storybox.Stories.ScriptView
       |> Ash.Changeset.for_create(:create, %{title: "Other Scene", scene_id: other_scene.id})
       |> Ash.create(authorize?: false)
@@ -109,10 +107,9 @@ defmodule StoryboxWeb.UpstreamChangesTest do
     {:ok, other_sp} =
       Storybox.Stories.ScriptPiece
       |> Ash.Changeset.for_create(:create, %{
-        script_view_id: other_sv.id,
-        content_uri: "storybox://test/other/v1.fountain",
+        scene_id: other_scene.id,
+        content_uri: Storybox.Storage.uri_for_script_piece(other_scene.id, 1),
         version_number: 1,
-        upstream_status: :stale,
         weights: %{}
       })
       |> Ash.create(authorize?: false)
