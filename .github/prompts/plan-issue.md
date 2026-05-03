@@ -62,10 +62,24 @@ All diagrams must use this init block for dark/light mode compatibility:
 Place diagrams inline in the relevant section (e.g. a class diagram in **Schema diff**, a sequence diagram in **Step-by-step plan**).
 
 **Mermaid syntax rules — avoid parse errors:**
-- Any label containing a colon (e.g. Elixir atoms like `:script_vv`, field values like `type: :foo`) **must be wrapped in double quotes**: `"view_version_type: :script_vv"`
-- Any label containing `()`, `<>`, `[]`, or `{` must also be quoted
-- In sequence diagrams, note text with colons must be quoted: `Note right of A: "key: value"`
-- Test your diagram mentally: if a token could be mistaken for a Mermaid keyword or separator, quote it
+
+Diagrams are communication tools, not code. Write labels in plain English or pseudo-code — never paste Elixir syntax into a diagram.
+
+**Elixir → pseudo-code (apply everywhere):**
+- Atoms — drop the colon: `:script_vv` → `script_vv`, `:sequence_vv` → `sequence_vv`
+- OK/error tuples — use plain text: `{:ok, vv}` → `ok vv`, `{:error, reason}` → `error: reason`
+- Never use `%{}`, `->`, `<>`, pattern-match syntax, or any Elixir-specific punctuation in labels
+
+**Quoting rules:**
+- Any label containing a colon must be wrapped in double quotes: `"type: script_vv"`
+- Any label containing `()`, `[]`, or `{` must also be quoted
+- In sequence diagrams, always quote `note over` text: `Note over A: "some text"`
+- When in doubt, quote — Mermaid ignores surrounding quotes but chokes on unquoted special chars
+
+**classDiagram member syntax:**
+- Attribute format: `+name type` — e.g. `+id uuid`, `+version_number integer` — **never** `+id: uuid` (colon is invalid inside a class body)
+- Method format: `+methodName()` with no return type unless it adds real clarity
+- Only list fields that are new or central to the change; omit boilerplate like `inserted_at`
 
 ```
 ## Planning proposal
