@@ -16,7 +16,6 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.ScriptPiece
     resource Storybox.Stories.Scene
     resource Storybox.Stories.ScriptSnapshot
-    resource Storybox.Stories.UpstreamChange
     resource Storybox.Stories.TreatmentView
     resource Storybox.Stories.TreatmentViewVersion
     resource Storybox.Stories.SequenceView
