@@ -9,6 +9,7 @@ defmodule Storybox.Stories.StalenessTest do
     ScriptView,
     ScriptViewVersion,
     Segment,
+    Sequence,
     SequencePiece,
     Staleness,
     Story,
@@ -191,6 +192,130 @@ defmodule Storybox.Stories.StalenessTest do
       bogus_id = Ecto.UUID.generate()
       refute Staleness.piece_stale?(bogus_id, :character_piece)
       refute Staleness.piece_stale?(bogus_id, :world_piece)
+    end
+  end
+
+  describe "story_stale_summary/1" do
+    test "returns stale VVs and stale pieces, excludes fresh ones", %{
+      story: story,
+      scene: scene,
+      vv1: vv1
+    } do
+      # Make vv1 stale: sp1 (v1) was the latest when vv1 was cut; create sp2 now
+      {:ok, _sp2} =
+        ScriptPiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          scene_id: scene.id,
+          content: "INT. COTTAGE - DAY\n\nRevised draft."
+        })
+        |> Ash.run_action()
+
+      # Fresh VV: a second scene with only one piece version — not stale
+      {:ok, scene_b} =
+        Scene
+        |> Ash.Changeset.for_create(:create, %{title: "Garden", story_id: story.id})
+        |> Ash.create()
+
+      {:ok, script_view_b} =
+        ScriptView
+        |> Ash.Changeset.for_create(:create, %{scene_id: scene_b.id})
+        |> Ash.create()
+
+      {:ok, sp_b1} =
+        ScriptPiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          scene_id: scene_b.id,
+          content: "EXT. GARDEN - DAY\n\nSunshine."
+        })
+        |> Ash.run_action()
+
+      {:ok, vv_fresh} =
+        ScriptViewVersion
+        |> Ash.ActionInput.for_action(:cut, %{
+          script_view_id: script_view_b.id,
+          script_piece_id: sp_b1.id
+        })
+        |> Ash.run_action()
+
+      # Stale SequencePiece: has provenance, then its source gains a newer version
+      {:ok, seq_a} =
+        Sequence
+        |> Ash.Changeset.for_create(:create, %{
+          story_id: story.id,
+          name: "Act One",
+          slug: "act-one"
+        })
+        |> Ash.create()
+
+      {:ok, syn_v1} =
+        SynopsisPiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          sequence_id: seq_a.id,
+          content: "Synopsis v1."
+        })
+        |> Ash.run_action()
+
+      {:ok, seq_piece_stale} =
+        SequencePiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          sequence_id: seq_a.id,
+          content: "Treatment draft.",
+          source_synopsis_piece_id: syn_v1.id,
+          source_version_at_creation: syn_v1.version_number
+        })
+        |> Ash.run_action()
+
+      {:ok, _syn_v2} =
+        SynopsisPiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          sequence_id: seq_a.id,
+          content: "Synopsis v2."
+        })
+        |> Ash.run_action()
+
+      # Fresh SequencePiece: no provenance — can never be stale
+      {:ok, seq_b} =
+        Sequence
+        |> Ash.Changeset.for_create(:create, %{
+          story_id: story.id,
+          name: "Act Two",
+          slug: "act-two"
+        })
+        |> Ash.create()
+
+      {:ok, seq_piece_fresh} =
+        SequencePiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          sequence_id: seq_b.id,
+          content: "Fresh treatment."
+        })
+        |> Ash.run_action()
+
+      summary = Staleness.story_stale_summary(story.id)
+
+      stale_vv_ids = Enum.map(summary.view_versions, & &1.id)
+      stale_piece_ids = Enum.map(summary.pieces, & &1.id)
+
+      assert vv1.id in stale_vv_ids
+      refute vv_fresh.id in stale_vv_ids
+      assert Enum.any?(summary.view_versions, &(&1.type == :script_vv))
+
+      assert seq_piece_stale.id in stale_piece_ids
+      refute seq_piece_fresh.id in stale_piece_ids
+      assert Enum.any?(summary.pieces, &(&1.type == :sequence_piece))
+    end
+
+    test "returns empty collections for a story with no stale items", %{story: story} do
+      # vv1 is pinned to sp1 (v1). No sp2 exists in this test, so nothing is stale.
+      # The bootstrapped TVV/SVV have nil-pin segments (no SequencePiece/SynopsisPiece yet).
+      summary = Staleness.story_stale_summary(story.id)
+
+      assert summary.view_versions == []
+      assert summary.pieces == []
     end
   end
 end
