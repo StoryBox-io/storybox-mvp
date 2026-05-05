@@ -425,10 +425,7 @@ if little_witch = all_stories["Little Witch"] do
 
       {:ok, script_view} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: title,
-          scene_id: scene.id
-        })
+        |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
         |> Ash.create(authorize?: false)
 
       if content do
@@ -445,9 +442,12 @@ if little_witch = all_stories["Little Witch"] do
           })
           |> Ash.create(authorize?: false)
 
-        script_view
-        |> Ash.Changeset.for_update(:approve_version, %{version_id: v1.id})
-        |> Ash.update!(authorize?: false)
+        Storybox.Stories.ScriptViewVersion
+        |> Ash.ActionInput.for_action(:cut, %{
+          script_view_id: script_view.id,
+          script_piece_id: v1.id
+        })
+        |> Ash.run_action!(authorize?: false)
       end
 
       {scene, script_view}
