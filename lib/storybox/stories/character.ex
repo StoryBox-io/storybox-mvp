@@ -12,26 +12,25 @@ defmodule Storybox.Stories.Character do
     uuid_primary_key :id
 
     attribute :name, :string, allow_nil?: false, public?: true
-    attribute :essence, :string, allow_nil?: true, public?: true
-    attribute :contradictions, {:array, :string}, allow_nil?: true, public?: true
-    attribute :voice, :string, allow_nil?: true, public?: true
 
     timestamps()
   end
 
   relationships do
     belongs_to :story, Storybox.Stories.Story, allow_nil?: false, public?: true
+    has_many :character_pieces, Storybox.Stories.CharacterPiece, public?: true
+    has_one :character_view, Storybox.Stories.CharacterView, public?: true
   end
 
   actions do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:name, :essence, :contradictions, :voice, :story_id]
+      accept [:name, :story_id]
     end
 
     update :update do
-      accept [:name, :essence, :contradictions, :voice]
+      accept [:name]
     end
   end
 end

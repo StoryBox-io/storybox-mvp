@@ -301,10 +301,10 @@ defmodule Storybox.Stories.SegmentTest do
     test "raises ArgumentError for a not-yet-implemented pin_type" do
       segment = %{
         pin_id: Ecto.UUID.generate(),
-        pin_type: :character_piece
+        pin_type: :treatment_vv
       }
 
-      assert_raise ArgumentError, ~r/:character_piece/, fn -> Segment.resolve_pin(segment) end
+      assert_raise ArgumentError, ~r/:treatment_vv/, fn -> Segment.resolve_pin(segment) end
     end
   end
 
@@ -376,10 +376,10 @@ defmodule Storybox.Stories.SegmentTest do
     test "raises ArgumentError for a not-yet-implemented pin_type" do
       segment = %{
         pin_id: Ecto.UUID.generate(),
-        pin_type: :character_piece
+        pin_type: :treatment_vv
       }
 
-      assert_raise ArgumentError, ~r/:character_piece/, fn ->
+      assert_raise ArgumentError, ~r/:treatment_vv/, fn ->
         Segment.pin_target_latest_version(segment)
       end
     end
