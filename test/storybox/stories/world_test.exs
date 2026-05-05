@@ -1,6 +1,8 @@
 defmodule Storybox.Stories.WorldTest do
   use Storybox.DataCase
 
+  require Ash.Query
+
   setup do
     {:ok, user} =
       Storybox.Accounts.User
@@ -23,34 +25,16 @@ defmodule Storybox.Stories.WorldTest do
     test "creates a world with story_id", %{story: story} do
       assert {:ok, world} =
                Storybox.Stories.World
-               |> Ash.Changeset.for_create(:create, %{
-                 history: "Founded in 1842",
-                 rules: "Magic costs memory",
-                 subtext: "Power corrupts",
-                 story_id: story.id
-               })
-               |> Ash.create()
-
-      assert world.history == "Founded in 1842"
-      assert world.rules == "Magic costs memory"
-      assert world.subtext == "Power corrupts"
-      assert world.story_id == story.id
-    end
-
-    test "creates a world with only story_id (all fields optional)", %{story: story} do
-      assert {:ok, world} =
-               Storybox.Stories.World
                |> Ash.Changeset.for_create(:create, %{story_id: story.id})
                |> Ash.create()
 
       assert world.story_id == story.id
-      assert world.history == nil
     end
 
     test "fails without a story_id" do
       assert {:error, %Ash.Error.Invalid{}} =
                Storybox.Stories.World
-               |> Ash.Changeset.for_create(:create, %{history: "No story"})
+               |> Ash.Changeset.for_create(:create, %{})
                |> Ash.create()
     end
   end
@@ -59,31 +43,39 @@ defmodule Storybox.Stories.WorldTest do
     test "returns created worlds", %{story: story} do
       {:ok, _} =
         Storybox.Stories.World
-        |> Ash.Changeset.for_create(:create, %{history: "Ancient times", story_id: story.id})
+        |> Ash.Changeset.for_create(:create, %{story_id: story.id})
         |> Ash.create()
 
       assert {:ok, worlds} = Storybox.Stories.World |> Ash.read()
-      assert Enum.any?(worlds, &(&1.history == "Ancient times"))
+      assert Enum.any?(worlds, &(&1.story_id == story.id))
     end
   end
 
-  describe "update" do
-    test "changes world fields", %{story: story} do
+  describe "has_one :world_view association" do
+    test "loads the WorldView after it is created", %{story: story} do
       {:ok, world} =
         Storybox.Stories.World
-        |> Ash.Changeset.for_create(:create, %{history: "Old history", story_id: story.id})
+        |> Ash.Changeset.for_create(:create, %{story_id: story.id})
         |> Ash.create()
 
-      assert {:ok, updated} =
-               world
-               |> Ash.Changeset.for_update(:update, %{
-                 history: "New history",
-                 subtext: "Decay is inevitable"
-               })
-               |> Ash.update()
+      {:ok, _wv} =
+        Storybox.Stories.WorldView
+        |> Ash.ActionInput.for_action(:ensure_for_world, %{world_id: world.id})
+        |> Ash.run_action()
 
-      assert updated.history == "New history"
-      assert updated.subtext == "Decay is inevitable"
+      {:ok, loaded} = Ash.load(world, :world_view)
+      assert loaded.world_view != nil
+      assert loaded.world_view.world_id == world.id
+    end
+  end
+
+  describe "resource shape" do
+    test "has no history, rules, or subtext attribute" do
+      attrs = Ash.Resource.Info.attributes(Storybox.Stories.World)
+      names = Enum.map(attrs, & &1.name)
+      refute :history in names
+      refute :rules in names
+      refute :subtext in names
     end
   end
 end

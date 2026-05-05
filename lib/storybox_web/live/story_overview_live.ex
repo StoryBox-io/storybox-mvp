@@ -28,10 +28,21 @@ defmodule StoryboxWeb.StoryOverviewLive do
               |> Ash.Query.filter(story_id == ^story.id)
               |> Ash.read!(authorize?: false)
 
+            characters_with_content =
+              for character <- characters do
+                {character, resolve_character_content(character.id)}
+              end
+
             world =
               Storybox.Stories.World
               |> Ash.Query.filter(story_id == ^story.id)
               |> Ash.read_one!(authorize?: false)
+
+            {world_content, world_vv_inserted_at} =
+              case world do
+                nil -> {nil, nil}
+                w -> resolve_world_content(w.id)
+              end
 
             synopsis_view =
               Storybox.Stories.SynopsisView
@@ -53,12 +64,62 @@ defmodule StoryboxWeb.StoryOverviewLive do
             {:ok,
              assign(socket,
                story: story,
-               characters: characters,
+               characters_with_content: characters_with_content,
                world: world,
+               world_content: world_content,
+               world_vv_inserted_at: world_vv_inserted_at,
                synopsis_view_versions: synopsis_view_versions,
                page_title: story.title
              )}
         end
+    end
+  end
+
+  defp resolve_character_content(character_id) do
+    character_view =
+      Storybox.Stories.CharacterView
+      |> Ash.Query.filter(character_id == ^character_id)
+      |> Ash.read_one!(authorize?: false)
+
+    with cv when not is_nil(cv) <- character_view,
+         [vv | _] <-
+           Storybox.Stories.CharacterViewVersion
+           |> Ash.Query.filter(character_view_id == ^cv.id)
+           |> Ash.Query.sort(version_number: :desc)
+           |> Ash.read!(authorize?: false),
+         [seg | _] <-
+           Storybox.Stories.Segment
+           |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == :character_vv)
+           |> Ash.read!(authorize?: false),
+         {:resolved, piece} <- Storybox.Stories.Segment.resolve_pin(seg),
+         {:ok, content} <- Storybox.Storage.get_content(piece.content_uri) do
+      content
+    else
+      _ -> nil
+    end
+  end
+
+  defp resolve_world_content(world_id) do
+    world_view =
+      Storybox.Stories.WorldView
+      |> Ash.Query.filter(world_id == ^world_id)
+      |> Ash.read_one!(authorize?: false)
+
+    with wv when not is_nil(wv) <- world_view,
+         [vv | _] <-
+           Storybox.Stories.WorldViewVersion
+           |> Ash.Query.filter(world_view_id == ^wv.id)
+           |> Ash.Query.sort(version_number: :desc)
+           |> Ash.read!(authorize?: false),
+         [seg | _] <-
+           Storybox.Stories.Segment
+           |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == :world_vv)
+           |> Ash.read!(authorize?: false),
+         {:resolved, piece} <- Storybox.Stories.Segment.resolve_pin(seg),
+         {:ok, content} <- Storybox.Storage.get_content(piece.content_uri) do
+      {content, vv.inserted_at}
+    else
+      _ -> {nil, nil}
     end
   end
 
@@ -90,35 +151,16 @@ defmodule StoryboxWeb.StoryOverviewLive do
 
         <section class="space-y-3">
           <h2 class="text-xl font-semibold">Characters</h2>
-          <%= if @characters == [] do %>
+          <%= if @characters_with_content == [] do %>
             <p class="text-base-content/60 text-sm">No characters defined yet.</p>
           <% else %>
             <ul class="space-y-2">
-              <%= for character <- @characters do %>
+              <%= for {character, content} <- @characters_with_content do %>
                 <li class="card bg-base-200 shadow-sm">
                   <div class="card-body py-3">
                     <h3 class="card-title text-base">{character.name}</h3>
-                    <%= if character.essence do %>
-                      <p class="text-base-content/70 text-sm">{character.essence}</p>
-                    <% end %>
-                    <%= if character.voice || character.contradictions not in [nil, []] do %>
-                      <details class="mt-1">
-                        <summary class="text-xs text-base-content/50 cursor-pointer select-none">
-                          Voice &amp; contradictions
-                        </summary>
-                        <div class="mt-2 space-y-2">
-                          <%= if character.voice do %>
-                            <p class="text-sm">{character.voice}</p>
-                          <% end %>
-                          <%= if character.contradictions not in [nil, []] do %>
-                            <div class="flex flex-wrap gap-1">
-                              <%= for c <- character.contradictions do %>
-                                <span class="badge badge-outline badge-sm">{c}</span>
-                              <% end %>
-                            </div>
-                          <% end %>
-                        </div>
-                      </details>
+                    <%= if content do %>
+                      <p class="text-base-content/70 text-sm whitespace-pre-line">{content}</p>
                     <% end %>
                   </div>
                 </li>
@@ -134,33 +176,14 @@ defmodule StoryboxWeb.StoryOverviewLive do
           <% else %>
             <div class="card bg-base-200 shadow-sm">
               <div class="card-body space-y-3">
-                <%= if @world.history do %>
-                  <div>
-                    <p class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-                      History
-                    </p>
-                    <p class="text-sm mt-1">{@world.history}</p>
-                  </div>
+                <%= if @world_content do %>
+                  <p class="text-sm whitespace-pre-line">{@world_content}</p>
                 <% end %>
-                <%= if @world.rules do %>
-                  <div>
-                    <p class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-                      Rules
-                    </p>
-                    <p class="text-sm mt-1">{@world.rules}</p>
-                  </div>
+                <%= if @world_vv_inserted_at do %>
+                  <p class="text-xs text-base-content/40">
+                    Last updated: {Calendar.strftime(@world_vv_inserted_at, "%B %-d, %Y")}
+                  </p>
                 <% end %>
-                <%= if @world.subtext do %>
-                  <div>
-                    <p class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-                      Subtext
-                    </p>
-                    <p class="text-sm mt-1">{@world.subtext}</p>
-                  </div>
-                <% end %>
-                <p class="text-xs text-base-content/40">
-                  Last updated: {Calendar.strftime(@world.updated_at, "%B %-d, %Y")}
-                </p>
               </div>
             </div>
           <% end %>

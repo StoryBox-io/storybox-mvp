@@ -1,6 +1,8 @@
 defmodule Storybox.Stories.CharacterTest do
   use Storybox.DataCase
 
+  require Ash.Query
+
   setup do
     {:ok, user} =
       Storybox.Accounts.User
@@ -25,17 +27,11 @@ defmodule Storybox.Stories.CharacterTest do
                Storybox.Stories.Character
                |> Ash.Changeset.for_create(:create, %{
                  name: "Alice",
-                 essence: "Driven by justice",
-                 contradictions: ["brave", "reckless"],
-                 voice: "Clipped, precise",
                  story_id: story.id
                })
                |> Ash.create()
 
       assert character.name == "Alice"
-      assert character.essence == "Driven by justice"
-      assert character.contradictions == ["brave", "reckless"]
-      assert character.voice == "Clipped, precise"
       assert character.story_id == story.id
     end
 
@@ -67,7 +63,7 @@ defmodule Storybox.Stories.CharacterTest do
   end
 
   describe "update" do
-    test "changes character fields", %{story: story} do
+    test "changes character name", %{story: story} do
       {:ok, character} =
         Storybox.Stories.Character
         |> Ash.Changeset.for_create(:create, %{name: "Charlie", story_id: story.id})
@@ -75,11 +71,41 @@ defmodule Storybox.Stories.CharacterTest do
 
       assert {:ok, updated} =
                character
-               |> Ash.Changeset.for_update(:update, %{name: "Charles", voice: "Deep baritone"})
+               |> Ash.Changeset.for_update(:update, %{name: "Charles"})
                |> Ash.update()
 
       assert updated.name == "Charles"
-      assert updated.voice == "Deep baritone"
+    end
+  end
+
+  describe "has_many :character_pieces association" do
+    test "returns CharacterPieces scoped to the Character", %{story: story} do
+      {:ok, character} =
+        Storybox.Stories.Character
+        |> Ash.Changeset.for_create(:create, %{name: "Dana", story_id: story.id})
+        |> Ash.create()
+
+      {:ok, _piece} =
+        Storybox.Stories.CharacterPiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          character_id: character.id,
+          content: "Essence: Brave."
+        })
+        |> Ash.run_action()
+
+      {:ok, loaded} = Ash.load(character, :character_pieces)
+      assert length(loaded.character_pieces) == 1
+      assert hd(loaded.character_pieces).character_id == character.id
+    end
+  end
+
+  describe "resource shape" do
+    test "has no essence, voice, or contradictions attribute" do
+      attrs = Ash.Resource.Info.attributes(Storybox.Stories.Character)
+      names = Enum.map(attrs, & &1.name)
+      refute :essence in names
+      refute :voice in names
+      refute :contradictions in names
     end
   end
 end

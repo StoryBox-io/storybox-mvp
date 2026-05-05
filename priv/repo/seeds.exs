@@ -93,20 +93,61 @@ if little_witch = all_stories["Little Witch"] do
     |> Ash.Query.filter(story_id == ^little_witch.id)
     |> Ash.read_one!(authorize?: false)
 
-  if is_nil(existing_world) do
-    Storybox.Stories.World
-    |> Ash.Changeset.for_create(:create, %{
-      history:
-        "The Order of Flame trained healers and demon-binders for generations. They wrote the Chosen One prophecy as a political shield — it outlasted them. The Alderman rose through a war that destroyed the Order and inherited the prophecy, deciding it meant whoever controls the Chosen One controls the continent.",
-      rules:
-        "The threshold between discipline and consumption is the Order's most guarded knowledge. Unglamorous, dangerous work — years of it — before anyone was permitted near a demon. The Alderman's purge continues: wanted posters for witches line every garrison wall.",
-      subtext:
-        "The prophecy does not need to be true to be useful. The political machinery runs on belief, not fact. What Fleur did in the fire was real not because it was special — because it was work.",
-      story_id: little_witch.id
-    })
-    |> Ash.create!(authorize?: false)
+  world =
+    if is_nil(existing_world) do
+      w =
+        Storybox.Stories.World
+        |> Ash.Changeset.for_create(:create, %{story_id: little_witch.id})
+        |> Ash.create!(authorize?: false)
 
-    IO.puts("  Created world for Little Witch")
+      IO.puts("  Created world for Little Witch")
+      w
+    else
+      existing_world
+    end
+
+  existing_world_pieces =
+    Storybox.Stories.WorldPiece
+    |> Ash.Query.filter(world_id == ^world.id)
+    |> Ash.read!(authorize?: false)
+
+  if existing_world_pieces == [] do
+    world_content = """
+    History: The Order of Flame trained healers and demon-binders for generations. They wrote the Chosen One prophecy as a political shield — it outlasted them. The Alderman rose through a war that destroyed the Order and inherited the prophecy, deciding it meant whoever controls the Chosen One controls the continent.
+
+    Rules: The threshold between discipline and consumption is the Order's most guarded knowledge. Unglamorous, dangerous work — years of it — before anyone was permitted near a demon. The Alderman's purge continues: wanted posters for witches line every garrison wall.
+
+    Subtext: The prophecy does not need to be true to be useful. The political machinery runs on belief, not fact. What Fleur did in the fire was real not because it was special — because it was work.
+    """
+
+    Storybox.Stories.WorldPiece
+    |> Ash.ActionInput.for_action(:create_version, %{
+      world_id: world.id,
+      content: String.trim(world_content)
+    })
+    |> Ash.run_action!(authorize?: false)
+
+    IO.puts("  Created WorldPiece v1 for Little Witch")
+  end
+
+  {:ok, world_view} =
+    Storybox.Stories.WorldView
+    |> Ash.ActionInput.for_action(:ensure_for_world, %{world_id: world.id})
+    |> Ash.run_action(authorize?: false)
+
+  IO.puts("  WorldView ready for Little Witch")
+
+  existing_wvv =
+    Storybox.Stories.WorldViewVersion
+    |> Ash.Query.filter(world_view_id == ^world_view.id)
+    |> Ash.read!(authorize?: false)
+
+  if existing_wvv == [] do
+    Storybox.Stories.WorldViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{world_view_id: world_view.id})
+    |> Ash.run_action!(authorize?: false)
+
+    IO.puts("  Cut WorldViewVersion v1 for Little Witch")
   end
 
   # -- Characters ------------------------------------------------------------
@@ -115,59 +156,114 @@ if little_witch = all_stories["Little Witch"] do
     Storybox.Stories.Character
     |> Ash.Query.filter(story_id == ^little_witch.id)
     |> Ash.read!(authorize?: false)
-    |> Enum.map(& &1.name)
 
-  for {name, attrs} <- [
-        {"Fleur",
-         %{
-           essence:
-             "A lonely orphan with half-finished training who mistakes the feeling of being chosen for the fact of it.",
-           voice:
-             "Genuine, service-oriented — her good impulses are what make her easy to weaponise.",
-           contradictions: ["capable yet unfinished", "grief-driven yet clear-eyed at the end"]
-         }},
-        {"Kestrel",
-         %{
-           essence:
-             "The Order's former war leader. Imprisoned for a decade. Has spent ten years constructing a picture of Silas's betrayal from incomplete evidence.",
-           voice: "Blade-like. Perceptive and strategic. Every word is a move.",
-           contradictions: ["honed yet wrong", "engineering revenge yet undoing it"]
-         }},
-        {"Silas",
-         %{
-           essence:
-             "Fleur's guardian. Never seen on screen after the prologue. The moral centre of the story in absentia.",
-           voice: "Quiet. Unglamorous. Her example is the lesson, not her words.",
-           contradictions: [
-             "careful yet afraid",
-             "protective yet the source of the vulnerability"
-           ]
-         }},
-        {"The Flame Demon",
-         %{
-           essence:
-             "A cunning elemental parasite who survives by becoming whatever his captor needs most.",
-           voice: "Warm, patient, precise. He does not invent hope. He locates it and feeds it.",
-           contradictions: ["charming yet consuming", "small yet growing"]
-         }},
-        {"The Alderman",
-         %{
-           essence:
-             "An expansionist ruler who genuinely believes the prophecy. This makes him more dangerous than a cynic.",
-           voice:
-             "Rational given his premise. He is collecting what he believes the world promised him.",
-           contradictions: ["sincere yet monstrous", "building peace yet burning people"]
-         }}
-      ],
-      name not in existing_characters do
-    Storybox.Stories.Character
-    |> Ash.Changeset.for_create(
-      :create,
-      Map.merge(attrs, %{name: name, story_id: little_witch.id})
-    )
-    |> Ash.create!(authorize?: false)
+  existing_character_names = Enum.map(existing_characters, & &1.name)
 
-    IO.puts("  Created character: #{name}")
+  characters_data = [
+    {"Fleur",
+     """
+     Essence: A lonely orphan with half-finished training who mistakes the feeling of being chosen for the fact of it.
+
+     Voice: Genuine, service-oriented — her good impulses are what make her easy to weaponise.
+
+     Contradictions:
+     - capable yet unfinished
+     - grief-driven yet clear-eyed at the end
+     """},
+    {"Kestrel",
+     """
+     Essence: The Order's former war leader. Imprisoned for a decade. Has spent ten years constructing a picture of Silas's betrayal from incomplete evidence.
+
+     Voice: Blade-like. Perceptive and strategic. Every word is a move.
+
+     Contradictions:
+     - honed yet wrong
+     - engineering revenge yet undoing it
+     """},
+    {"Silas",
+     """
+     Essence: Fleur's guardian. Never seen on screen after the prologue. The moral centre of the story in absentia.
+
+     Voice: Quiet. Unglamorous. Her example is the lesson, not her words.
+
+     Contradictions:
+     - careful yet afraid
+     - protective yet the source of the vulnerability
+     """},
+    {"The Flame Demon",
+     """
+     Essence: A cunning elemental parasite who survives by becoming whatever his captor needs most.
+
+     Voice: Warm, patient, precise. He does not invent hope. He locates it and feeds it.
+
+     Contradictions:
+     - charming yet consuming
+     - small yet growing
+     """},
+    {"The Alderman",
+     """
+     Essence: An expansionist ruler who genuinely believes the prophecy. This makes him more dangerous than a cynic.
+
+     Voice: Rational given his premise. He is collecting what he believes the world promised him.
+
+     Contradictions:
+     - sincere yet monstrous
+     - building peace yet burning people
+     """}
+  ]
+
+  all_characters =
+    for {name, content} <- characters_data do
+      character =
+        if name not in existing_character_names do
+          c =
+            Storybox.Stories.Character
+            |> Ash.Changeset.for_create(:create, %{name: name, story_id: little_witch.id})
+            |> Ash.create!(authorize?: false)
+
+          IO.puts("  Created character: #{name}")
+          c
+        else
+          Enum.find(existing_characters, &(&1.name == name))
+        end
+
+      {character, content}
+    end
+
+  for {character, content} <- all_characters do
+    existing_pieces =
+      Storybox.Stories.CharacterPiece
+      |> Ash.Query.filter(character_id == ^character.id)
+      |> Ash.read!(authorize?: false)
+
+    if existing_pieces == [] do
+      Storybox.Stories.CharacterPiece
+      |> Ash.ActionInput.for_action(:create_version, %{
+        character_id: character.id,
+        content: String.trim(content)
+      })
+      |> Ash.run_action!(authorize?: false)
+
+      IO.puts("  Created CharacterPiece v1 for #{character.name}")
+    end
+
+    {:ok, character_view} =
+      Storybox.Stories.CharacterView
+      |> Ash.ActionInput.for_action(:ensure_for_character, %{character_id: character.id})
+      |> Ash.run_action(authorize?: false)
+
+    existing_cvv =
+      Storybox.Stories.CharacterViewVersion
+      |> Ash.Query.filter(character_view_id == ^character_view.id)
+      |> Ash.read!(authorize?: false)
+
+    if existing_cvv == [] do
+      Storybox.Stories.CharacterViewVersion
+      |> Ash.ActionInput.for_action(:cut, %{character_view_id: character_view.id})
+      |> Ash.run_action!(authorize?: false)
+
+      IO.puts("  Cut CharacterViewVersion v1 for #{character.name}")
+    end
   end
 
   # -- Sequences -------------------------------------------------------------
@@ -329,10 +425,7 @@ if little_witch = all_stories["Little Witch"] do
 
       {:ok, script_view} =
         Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{
-          title: title,
-          scene_id: scene.id
-        })
+        |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
         |> Ash.create(authorize?: false)
 
       if content do
@@ -349,9 +442,12 @@ if little_witch = all_stories["Little Witch"] do
           })
           |> Ash.create(authorize?: false)
 
-        script_view
-        |> Ash.Changeset.for_update(:approve_version, %{version_id: v1.id})
-        |> Ash.update!(authorize?: false)
+        Storybox.Stories.ScriptViewVersion
+        |> Ash.ActionInput.for_action(:cut, %{
+          script_view_id: script_view.id,
+          script_piece_id: v1.id
+        })
+        |> Ash.run_action!(authorize?: false)
       end
 
       {scene, script_view}

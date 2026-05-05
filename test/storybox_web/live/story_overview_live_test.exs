@@ -6,12 +6,12 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
   # Seed data graph:
   #
   #   alice ──► "The Grand Illusion" (story)
-  #               ├── Character: "Marcel"   (essence, voice, contradictions)
-  #               ├── Character: "Nora"     (essence only)
-  #               ├── World                 (history, rules, subtext)
+  #               ├── Character: "Marcel"   (CharacterPiece: essence, voice, contradictions)
+  #               ├── Character: "Nora"     (CharacterPiece: essence only)
+  #               ├── World                 (WorldPiece: history, rules, subtext)
   #               ├── SynopsisView          (one per story)
-  #               │     ├── SynopsisViewVersion v1  (older)
-  #               │     └── SynopsisViewVersion v2  (latest)
+  #               │     ├── SynopsisViewVersion v2  (older)
+  #               │     └── SynopsisViewVersion v3  (latest)
   #
   #   bob  ──► "Bob's Story" (separate user, used for auth isolation checks)
 
@@ -49,31 +49,74 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       Storybox.Stories.Character
       |> Ash.Changeset.for_create(:create, %{
         name: "Marcel",
-        essence: "Dignified soldier",
-        voice: "Formal and restrained",
-        contradictions: ["noble yet complicit", "loyal yet resigned"],
         story_id: story.id
       })
       |> Ash.create()
+
+    {:ok, _} =
+      Storybox.Stories.CharacterPiece
+      |> Ash.ActionInput.for_action(:create_version, %{
+        character_id: marcel.id,
+        content:
+          "Essence: Dignified soldier\n\nVoice: Formal and restrained\n\nContradictions:\n- noble yet complicit\n- loyal yet resigned"
+      })
+      |> Ash.run_action()
+
+    {:ok, marcel_view} =
+      Storybox.Stories.CharacterView
+      |> Ash.ActionInput.for_action(:ensure_for_character, %{character_id: marcel.id})
+      |> Ash.run_action()
+
+    Storybox.Stories.CharacterViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{character_view_id: marcel_view.id})
+    |> Ash.run_action!()
 
     {:ok, nora} =
       Storybox.Stories.Character
       |> Ash.Changeset.for_create(:create, %{
         name: "Nora",
-        essence: "Pragmatic survivor",
         story_id: story.id
       })
       |> Ash.create()
 
+    {:ok, _} =
+      Storybox.Stories.CharacterPiece
+      |> Ash.ActionInput.for_action(:create_version, %{
+        character_id: nora.id,
+        content: "Essence: Pragmatic survivor"
+      })
+      |> Ash.run_action()
+
+    {:ok, nora_view} =
+      Storybox.Stories.CharacterView
+      |> Ash.ActionInput.for_action(:ensure_for_character, %{character_id: nora.id})
+      |> Ash.run_action()
+
+    Storybox.Stories.CharacterViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{character_view_id: nora_view.id})
+    |> Ash.run_action!()
+
     {:ok, world} =
       Storybox.Stories.World
-      |> Ash.Changeset.for_create(:create, %{
-        history: "Post-war Paris",
-        rules: "Trust no one",
-        subtext: "Loss of innocence",
-        story_id: story.id
-      })
+      |> Ash.Changeset.for_create(:create, %{story_id: story.id})
       |> Ash.create()
+
+    {:ok, _} =
+      Storybox.Stories.WorldPiece
+      |> Ash.ActionInput.for_action(:create_version, %{
+        world_id: world.id,
+        content: "History: Post-war Paris\n\nRules: Trust no one\n\nSubtext: Loss of innocence"
+      })
+      |> Ash.run_action()
+
+    {:ok, world_view} =
+      Storybox.Stories.WorldView
+      |> Ash.ActionInput.for_action(:ensure_for_world, %{world_id: world.id})
+      |> Ash.run_action()
+
+    Storybox.Stories.WorldViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{world_view_id: world_view.id})
+    |> Ash.run_action!()
 
     {:ok, synopsis_view} =
       Storybox.Stories.SynopsisView
@@ -261,11 +304,11 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       assert html =~ "Latest"
     end
 
-    test "shows v1 in the version list", %{conn: conn, alice: alice, story: story} do
+    test "shows v2 in the version list", %{conn: conn, alice: alice, story: story} do
       conn = log_in_user(conn, alice)
       {:ok, _view, html} = live(conn, "/stories/#{story.id}")
 
-      assert html =~ "v1"
+      assert html =~ "v2"
     end
 
     test "shows the bootstrap synopsis version (v1) for a freshly created story", %{

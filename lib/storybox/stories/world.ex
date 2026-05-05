@@ -11,26 +11,24 @@ defmodule Storybox.Stories.World do
   attributes do
     uuid_primary_key :id
 
-    attribute :history, :string, allow_nil?: true, public?: true
-    attribute :rules, :string, allow_nil?: true, public?: true
-    attribute :subtext, :string, allow_nil?: true, public?: true
-
     timestamps()
   end
 
   relationships do
     belongs_to :story, Storybox.Stories.Story, allow_nil?: false, public?: true
+    has_many :world_pieces, Storybox.Stories.WorldPiece, public?: true
+    has_one :world_view, Storybox.Stories.WorldView, public?: true
   end
 
   actions do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:history, :rules, :subtext, :story_id]
+      accept [:story_id]
     end
 
     update :update do
-      accept [:history, :rules, :subtext]
+      accept []
     end
   end
 end
