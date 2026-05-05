@@ -313,55 +313,6 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  def upstream_changes(conn, _params) do
-    story = conn.assigns.current_story
-
-    scene_ids =
-      Storybox.Stories.Scene
-      |> Ash.Query.filter(story_id == ^story.id)
-      |> Ash.read!(authorize?: false)
-      |> Enum.map(& &1.id)
-
-    script_piece_ids =
-      case scene_ids do
-        [] ->
-          []
-
-        ids ->
-          Storybox.Stories.ScriptPiece
-          |> Ash.Query.filter(scene_id in ^ids)
-          |> Ash.read!(authorize?: false)
-          |> Enum.map(& &1.id)
-      end
-
-    changes =
-      case script_piece_ids do
-        [] ->
-          []
-
-        ids ->
-          Storybox.Stories.UpstreamChange
-          |> Ash.Query.filter(piece_version_id in ^ids and acknowledged == false)
-          |> Ash.Query.sort(inserted_at: :desc)
-          |> Ash.read!(authorize?: false)
-      end
-
-    json(conn, %{changes: Enum.map(changes, &format_upstream_change/1)})
-  end
-
-  defp format_upstream_change(change) do
-    %{
-      id: change.id,
-      piece_version_type: change.piece_version_type,
-      piece_version_id: change.piece_version_id,
-      component_type: change.component_type,
-      component_id: change.component_id,
-      version_before: change.version_before,
-      version_after: change.version_after,
-      inserted_at: change.inserted_at
-    }
-  end
-
   defp format_version(nil), do: nil
 
   defp format_version(piece) do
