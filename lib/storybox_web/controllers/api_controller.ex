@@ -313,6 +313,117 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  def list_tasks(conn, params) do
+    story = conn.assigns.current_story
+    status_str = Map.get(params, "status", "pending")
+
+    case parse_task_status(status_str) do
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{error: "status must be pending, in_progress, or complete"})
+
+      {:ok, status} ->
+        args = %{status: status, story_id: story.id}
+
+        args =
+          case params["component_id"] do
+            nil -> args
+            id -> Map.put(args, :component_id, id)
+          end
+
+        args =
+          case parse_int_param(params["limit"]) do
+            nil -> args
+            n -> Map.put(args, :limit, n)
+          end
+
+        args =
+          case parse_int_param(params["offset"]) do
+            nil -> args
+            n -> Map.put(args, :offset, n)
+          end
+
+        tasks =
+          Storybox.Stories.Task
+          |> Ash.Query.for_read(:list_pending, args)
+          |> Ash.read!(authorize?: false)
+
+        json(conn, Enum.map(tasks, &format_task/1))
+    end
+  end
+
+  def mark_task_in_progress(conn, %{"id" => id}) do
+    story = conn.assigns.current_story
+
+    case load_task_for_story(id, story.id) do
+      nil ->
+        conn |> put_status(404) |> json(%{error: "not found"})
+
+      task ->
+        case Ash.Changeset.for_update(task, :mark_in_progress, %{})
+             |> Ash.update(authorize?: false) do
+          {:ok, updated} -> json(conn, format_task(updated))
+          {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+        end
+    end
+  end
+
+  def mark_task_complete(conn, %{"id" => id}) do
+    story = conn.assigns.current_story
+
+    case load_task_for_story(id, story.id) do
+      nil ->
+        conn |> put_status(404) |> json(%{error: "not found"})
+
+      task ->
+        case Ash.Changeset.for_update(task, :mark_complete, %{})
+             |> Ash.update(authorize?: false) do
+          {:ok, updated} -> json(conn, format_task(updated))
+          {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+        end
+    end
+  end
+
+  defp load_task_for_story(task_id, story_id) do
+    Storybox.Stories.Task
+    |> Ash.Query.filter(id == ^task_id and story_id == ^story_id)
+    |> Ash.read_one!(authorize?: false)
+  end
+
+  defp parse_task_status("pending"), do: {:ok, :pending}
+  defp parse_task_status("in_progress"), do: {:ok, :in_progress}
+  defp parse_task_status("complete"), do: {:ok, :complete}
+  defp parse_task_status(_), do: {:error, :invalid_status}
+
+  defp parse_int_param(nil), do: nil
+
+  defp parse_int_param(s) when is_binary(s) do
+    case Integer.parse(s) do
+      {n, ""} when n > 0 -> n
+      _ -> nil
+    end
+  end
+
+  defp format_task(task) do
+    %{
+      id: task.id,
+      story_id: task.story_id,
+      component_type: task.component_type,
+      component_id: task.component_id,
+      target_view_id: task.target_view_id,
+      target_view_version_id: task.target_view_version_id,
+      target_view_type: task.target_view_type,
+      type: task.type,
+      status: task.status,
+      triggered_by_piece_id: task.triggered_by_piece_id,
+      triggered_by_piece_type: task.triggered_by_piece_type,
+      triggered_by_piece_version: task.triggered_by_piece_version,
+      inserted_at: task.inserted_at,
+      updated_at: task.updated_at
+    }
+  end
+
   defp format_version(nil), do: nil
 
   defp format_version(piece) do

@@ -68,17 +68,20 @@ defmodule Storybox.Stories.SequencePiece do
 
         uri = Storybox.Storage.uri_for_sequence_piece(story_id, sequence_id, next_version)
 
-        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content) do
-          Storybox.Stories.SequencePiece
-          |> Ash.Changeset.for_create(:create, %{
-            story_id: story_id,
-            sequence_id: sequence_id,
-            content_uri: uri,
-            version_number: next_version,
-            source_synopsis_piece_id: input.arguments[:source_synopsis_piece_id],
-            source_version_at_creation: input.arguments[:source_version_at_creation]
-          })
-          |> Ash.create(authorize?: false)
+        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content),
+             {:ok, piece} <-
+               Storybox.Stories.SequencePiece
+               |> Ash.Changeset.for_create(:create, %{
+                 story_id: story_id,
+                 sequence_id: sequence_id,
+                 content_uri: uri,
+                 version_number: next_version,
+                 source_synopsis_piece_id: input.arguments[:source_synopsis_piece_id],
+                 source_version_at_creation: input.arguments[:source_version_at_creation]
+               })
+               |> Ash.create(authorize?: false) do
+          Storybox.Stories.TaskGeneration.after_piece_version(piece, :sequence_piece)
+          {:ok, piece}
         end
       end
     end

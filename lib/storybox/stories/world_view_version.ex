@@ -50,6 +50,13 @@ defmodule Storybox.Stories.WorldViewVersion do
 
         world_id = world_view.world_id
 
+        world =
+          Storybox.Stories.World
+          |> Ash.Query.filter(id == ^world_id)
+          |> Ash.read_one!(authorize?: false)
+
+        story_id = world.story_id
+
         latest_piece =
           Storybox.Stories.WorldPiece
           |> Ash.Query.filter(world_id == ^world_id)
@@ -89,6 +96,15 @@ defmodule Storybox.Stories.WorldViewVersion do
           })
           |> Ash.create!(authorize?: false)
         end
+
+        Storybox.Stories.TaskGeneration.after_cut(
+          vv.id,
+          :world_vv,
+          world_view_id,
+          :world,
+          world_id,
+          story_id
+        )
 
         {:ok, vv}
       end

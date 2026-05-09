@@ -55,14 +55,17 @@ defmodule Storybox.Stories.WorldPiece do
 
         uri = Storybox.Storage.uri_for_world_piece(world_id, next_version)
 
-        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content) do
-          Storybox.Stories.WorldPiece
-          |> Ash.Changeset.for_create(:create, %{
-            world_id: world_id,
-            content_uri: uri,
-            version_number: next_version
-          })
-          |> Ash.create(authorize?: false)
+        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content),
+             {:ok, piece} <-
+               Storybox.Stories.WorldPiece
+               |> Ash.Changeset.for_create(:create, %{
+                 world_id: world_id,
+                 content_uri: uri,
+                 version_number: next_version
+               })
+               |> Ash.create(authorize?: false) do
+          Storybox.Stories.TaskGeneration.after_piece_version(piece, :world_piece)
+          {:ok, piece}
         end
       end
     end

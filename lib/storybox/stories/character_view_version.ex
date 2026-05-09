@@ -50,6 +50,13 @@ defmodule Storybox.Stories.CharacterViewVersion do
 
         character_id = character_view.character_id
 
+        character =
+          Storybox.Stories.Character
+          |> Ash.Query.filter(id == ^character_id)
+          |> Ash.read_one!(authorize?: false)
+
+        story_id = character.story_id
+
         latest_piece =
           Storybox.Stories.CharacterPiece
           |> Ash.Query.filter(character_id == ^character_id)
@@ -89,6 +96,15 @@ defmodule Storybox.Stories.CharacterViewVersion do
           })
           |> Ash.create!(authorize?: false)
         end
+
+        Storybox.Stories.TaskGeneration.after_cut(
+          vv.id,
+          :character_vv,
+          character_view_id,
+          :character,
+          character_id,
+          story_id
+        )
 
         {:ok, vv}
       end
