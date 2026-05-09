@@ -68,16 +68,19 @@ defmodule Storybox.Stories.ScriptPiece do
 
         uri = Storybox.Storage.uri_for_script_piece(scene_id, next_version)
 
-        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content) do
-          Storybox.Stories.ScriptPiece
-          |> Ash.Changeset.for_create(:create, %{
-            scene_id: scene_id,
-            content_uri: uri,
-            version_number: next_version,
-            source_sequence_piece_id: input.arguments[:source_sequence_piece_id],
-            source_version_at_creation: input.arguments[:source_version_at_creation]
-          })
-          |> Ash.create(authorize?: false)
+        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content),
+             {:ok, piece} <-
+               Storybox.Stories.ScriptPiece
+               |> Ash.Changeset.for_create(:create, %{
+                 scene_id: scene_id,
+                 content_uri: uri,
+                 version_number: next_version,
+                 source_sequence_piece_id: input.arguments[:source_sequence_piece_id],
+                 source_version_at_creation: input.arguments[:source_version_at_creation]
+               })
+               |> Ash.create(authorize?: false) do
+          Storybox.Stories.TaskGeneration.after_piece_version(piece, :script_piece)
+          {:ok, piece}
         end
       end
     end

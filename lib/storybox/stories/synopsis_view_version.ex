@@ -109,6 +109,15 @@ defmodule Storybox.Stories.SynopsisViewVersion do
           |> Ash.create!(authorize?: false)
         end)
 
+        Storybox.Stories.TaskGeneration.after_cut(
+          vv.id,
+          :synopsis_vv,
+          synopsis_view_id,
+          :story,
+          story_id,
+          story_id
+        )
+
         {:ok, vv}
       end
     end

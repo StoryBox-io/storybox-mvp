@@ -28,5 +28,6 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.SequenceViewVersion
     resource Storybox.Stories.StoryScriptView
     resource Storybox.Stories.StoryScriptViewVersion
+    resource Storybox.Stories.Task
   end
 end

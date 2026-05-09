@@ -50,6 +50,13 @@ defmodule Storybox.Stories.ScriptViewVersion do
           |> Ash.Query.filter(id == ^script_piece_id)
           |> Ash.read_one!(authorize?: false)
 
+        scene =
+          Storybox.Stories.Scene
+          |> Ash.Query.filter(id == ^piece.scene_id)
+          |> Ash.read_one!(authorize?: false)
+
+        story_id = scene.story_id
+
         existing_versions =
           Storybox.Stories.ScriptViewVersion
           |> Ash.Query.filter(script_view_id == ^script_view_id)
@@ -79,6 +86,15 @@ defmodule Storybox.Stories.ScriptViewVersion do
           pin_version_at_creation: piece.version_number
         })
         |> Ash.create!(authorize?: false)
+
+        Storybox.Stories.TaskGeneration.after_cut(
+          vv.id,
+          :script_vv,
+          script_view_id,
+          :scene,
+          piece.scene_id,
+          story_id
+        )
 
         {:ok, vv}
       end

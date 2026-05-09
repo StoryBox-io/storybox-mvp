@@ -123,6 +123,15 @@ defmodule Storybox.Stories.TreatmentViewVersion do
           |> Ash.create!(authorize?: false)
         end)
 
+        Storybox.Stories.TaskGeneration.after_cut(
+          vv.id,
+          :treatment_vv,
+          treatment_view_id,
+          :story,
+          story_id,
+          story_id
+        )
+
         {:ok, vv}
       end
     end

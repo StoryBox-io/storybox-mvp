@@ -55,14 +55,17 @@ defmodule Storybox.Stories.CharacterPiece do
 
         uri = Storybox.Storage.uri_for_character_piece(character_id, next_version)
 
-        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content) do
-          Storybox.Stories.CharacterPiece
-          |> Ash.Changeset.for_create(:create, %{
-            character_id: character_id,
-            content_uri: uri,
-            version_number: next_version
-          })
-          |> Ash.create(authorize?: false)
+        with {:ok, _} <- Storybox.Storage.put_content(uri, input.arguments.content),
+             {:ok, piece} <-
+               Storybox.Stories.CharacterPiece
+               |> Ash.Changeset.for_create(:create, %{
+                 character_id: character_id,
+                 content_uri: uri,
+                 version_number: next_version
+               })
+               |> Ash.create(authorize?: false) do
+          Storybox.Stories.TaskGeneration.after_piece_version(piece, :character_piece)
+          {:ok, piece}
         end
       end
     end

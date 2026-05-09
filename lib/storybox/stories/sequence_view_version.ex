@@ -45,6 +45,13 @@ defmodule Storybox.Stories.SequenceViewVersion do
         sequence_view_id = input.arguments.sequence_view_id
         script_view_version_ids = input.arguments.script_view_version_ids
 
+        sequence_view =
+          Storybox.Stories.SequenceView
+          |> Ash.Query.filter(id == ^sequence_view_id)
+          |> Ash.read_one!(authorize?: false)
+
+        story_id = sequence_view.story_id
+
         existing_versions =
           Storybox.Stories.SequenceViewVersion
           |> Ash.Query.filter(sequence_view_id == ^sequence_view_id)
@@ -83,6 +90,15 @@ defmodule Storybox.Stories.SequenceViewVersion do
           })
           |> Ash.create!(authorize?: false)
         end)
+
+        Storybox.Stories.TaskGeneration.after_cut(
+          vv.id,
+          :sequence_vv,
+          sequence_view_id,
+          :story,
+          story_id,
+          story_id
+        )
 
         {:ok, vv}
       end
