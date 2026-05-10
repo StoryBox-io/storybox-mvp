@@ -1,0 +1,3 @@
+[submodule "priv/seeds/little_witch"]
+	path = priv/seeds/little_witch
+	url = git@github.com:StoryBox-io/LittleWitch.git
