@@ -16,7 +16,28 @@ Parse the **Domain** block to understand:
 - What is NOT ALLOWED (out of scope — do not propose it)
 - Reference content listed (read those files first)
 
-## Step 2 — Investigate the codebase
+## Step 2 — Check for prior planning proposals
+
+```
+gh issue view $ISSUE_NUMBER --repo StoryBox-io/storybox-mvp --comments
+```
+
+Look for any existing comments containing `## Planning proposal`. **If one or more exist, you are doing a replan, not a fresh plan.** Handle as follows:
+
+1. Read each prior plan in full to understand what was previously proposed.
+2. Read all comments posted **after** the most recent prior plan — these are orchestrator feedback indicating why the prior plan is being revisited (scope changes, design updates, missing concerns, mistaken assumptions).
+3. The **issue body** is the source of truth for what is currently wanted. If it has been updated since a prior plan was posted, the body wins over the plan. Detect this by checking if the body contains content not reflected in the prior plan, or if it explicitly says the prior plan is superseded.
+4. Capture the URL of the most recent prior plan comment — you will reference it at the top of your new plan.
+5. Your new plan must be **self-contained**. Do not write "see prior plan" or "as previously discussed" — a reader of just your new plan should understand the work without reading the old one.
+6. At the very top of your new comment body (before `## Planning proposal`), include a single italicised line linking the most recent prior plan as superseded:
+
+   ```
+   _Supersedes [previous plan](<comment URL>)._
+   ```
+
+If **no** prior plan comments exist, this is a fresh plan — proceed without the supersedes line.
+
+## Step 3 — Investigate the codebase
 
 Read the files named in the Domain block. Then follow the data model outward as needed:
 - Ash resources under `lib/storybox/stories/`
@@ -25,7 +46,7 @@ Read the files named in the Domain block. Then follow the data model outward as 
 
 Use only: `Read`, `Glob`, `Grep`, `Bash` (read-only shell commands — `mix`, `grep`, `find`, `cat`). Do NOT edit or create files.
 
-## Step 3 — Produce your proposal
+## Step 4 — Produce your proposal
 
 Structure the proposal as follows. Be concrete — name exact files, function names, and migration names.
 
@@ -126,7 +147,7 @@ mix ecto.reset
 - [ ] step 2
 ```
 
-## Step 4 — Post the proposal
+## Step 5 — Post the proposal
 
 Post your proposal as a comment on the issue:
 
