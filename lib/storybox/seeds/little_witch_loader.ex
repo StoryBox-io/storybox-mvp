@@ -1,0 +1,543 @@
+defmodule Storybox.Seeds.LittleWitchLoader do
+  require Ash.Query
+
+  alias Storybox.Stories.{
+    Character,
+    CharacterPiece,
+    CharacterView,
+    CharacterViewVersion,
+    Scene,
+    ScriptPiece,
+    ScriptView,
+    ScriptViewVersion,
+    Segment,
+    Sequence,
+    SequencePiece,
+    SequenceView,
+    SequenceViewVersion,
+    StoryScriptView,
+    StoryScriptViewVersion,
+    SynopsisPiece,
+    SynopsisView,
+    SynopsisViewVersion,
+    Task,
+    TreatmentView,
+    TreatmentViewVersion,
+    World,
+    WorldPiece,
+    WorldView,
+    WorldViewVersion
+  }
+
+  @base_path Path.join(:code.priv_dir(:storybox), "seeds/little_witch")
+
+  def seed!(story) do
+    scene_count =
+      Scene
+      |> Ash.Query.filter(story_id == ^story.id)
+      |> Ash.count!(authorize?: false)
+
+    if scene_count > 0 do
+      :ok
+    else
+      do_seed!(story)
+    end
+  end
+
+  defp do_seed!(story) do
+    order = read_json("sequence_order.json")["order"]
+
+    # Remove bootstrap-created sequence-1 and stale VV cuts before seeding,
+    # so Phase 7/8 cut fresh V1s that discover all 7 sequences with their Pieces.
+    cleanup_bootstrap_artifacts!(story)
+
+    # Phase 1 — Sequences
+    sequences_by_slug = create_sequences!(story, order)
+
+    # Phase 2 — SynopsisPieces
+    synopsis_pieces_by_slug = create_synopsis_pieces!(story, sequences_by_slug, order)
+
+    # Phase 3 — SequencePieces
+    create_sequence_pieces!(story, sequences_by_slug, synopsis_pieces_by_slug, order)
+
+    # Phase 4 — Characters
+    create_characters!(story)
+
+    # Phase 5 — World
+    create_world!(story)
+
+    # Phase 6 — Scenes + ScriptPieces
+    {_scene_map, _script_view_map, script_vv_map} = create_scenes!(story)
+
+    # Phase 7 — TreatmentView + TreatmentVV
+    {:ok, treatment_view} =
+      TreatmentView
+      |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+      |> Ash.run_action(authorize?: false)
+
+    TreatmentViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{treatment_view_id: treatment_view.id})
+    |> Ash.run_action!(authorize?: false)
+
+    # Phase 8 — SynopsisView + SynopsisVV
+    {:ok, synopsis_view} =
+      SynopsisView
+      |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+      |> Ash.run_action(authorize?: false)
+
+    SynopsisViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: synopsis_view.id})
+    |> Ash.run_action!(authorize?: false)
+
+    # Phase 9 — Per-sequence SequenceViews + SequenceVVs
+    create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map)
+
+    # Phase 10 — StoryScriptView + StoryScriptVV
+    {:ok, story_script_view} =
+      StoryScriptView
+      |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+      |> Ash.run_action(authorize?: false)
+
+    StoryScriptViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{story_script_view_id: story_script_view.id})
+    |> Ash.run_action!(authorize?: false)
+
+    # Phase 11 — Verify
+    creation_tasks =
+      Task
+      |> Ash.Query.for_read(:list_pending, %{story_id: story.id})
+      |> Ash.read!(authorize?: false)
+      |> Enum.filter(&(&1.type == :creation))
+
+    if length(creation_tasks) != 1 do
+      raise "Expected exactly 1 pending creation Task for Little Witch story, got #{length(creation_tasks)}"
+    end
+
+    :ok
+  end
+
+  defp create_sequences!(story, order) do
+    for slug <- order, into: %{} do
+      synopsis_file = Path.join(@base_path, "synopsis-#{slug}-v1.fountain")
+
+      unless File.exists?(synopsis_file) do
+        raise "Missing synopsis file for slug #{inspect(slug)}: #{synopsis_file}"
+      end
+
+      headers = synopsis_file |> File.read!() |> parse_fountain_headers()
+      name = Map.fetch!(headers, "Sequence")
+
+      seq =
+        Sequence
+        |> Ash.Changeset.for_create(:create, %{
+          story_id: story.id,
+          name: name,
+          slug: slug
+        })
+        |> Ash.create!(authorize?: false)
+
+      {slug, seq}
+    end
+  end
+
+  defp create_synopsis_pieces!(story, sequences_by_slug, order) do
+    for slug <- order, into: %{} do
+      seq = Map.fetch!(sequences_by_slug, slug)
+
+      files =
+        Path.wildcard(Path.join(@base_path, "synopsis-#{slug}-v*.fountain"))
+        |> Enum.sort_by(&version_from_filename/1)
+
+      pieces =
+        for file <- files do
+          content = File.read!(file)
+
+          SynopsisPiece
+          |> Ash.ActionInput.for_action(:create_version, %{
+            story_id: story.id,
+            sequence_id: seq.id,
+            content: content
+          })
+          |> Ash.run_action!(authorize?: false)
+        end
+
+      {slug, pieces}
+    end
+  end
+
+  defp create_sequence_pieces!(story, sequences_by_slug, synopsis_pieces_by_slug, order) do
+    for slug <- order do
+      seq = Map.fetch!(sequences_by_slug, slug)
+      synopsis_pieces = Map.fetch!(synopsis_pieces_by_slug, slug)
+
+      files =
+        Path.wildcard(Path.join(@base_path, "#{slug}-v*.fountain"))
+        |> Enum.reject(&String.contains?(Path.basename(&1), "synopsis-"))
+        |> Enum.sort_by(&version_from_filename/1)
+
+      for file <- files do
+        n = version_from_filename(file)
+
+        source_synopsis =
+          synopsis_pieces
+          |> Enum.filter(&(&1.version_number <= n))
+          |> Enum.max_by(& &1.version_number, fn -> nil end)
+
+        content = File.read!(file)
+
+        SequencePiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          sequence_id: seq.id,
+          content: content,
+          source_synopsis_piece_id: source_synopsis && source_synopsis.id,
+          source_version_at_creation: source_synopsis && source_synopsis.version_number
+        })
+        |> Ash.run_action!(authorize?: false)
+      end
+    end
+  end
+
+  defp create_characters!(story) do
+    chars_dir = Path.join(@base_path, "characters")
+
+    dirs =
+      File.ls!(chars_dir)
+      |> Enum.filter(&File.dir?(Path.join(chars_dir, &1)))
+      |> Enum.sort()
+
+    for name_dir <- dirs do
+      char_dir = Path.join(chars_dir, name_dir)
+
+      profile_files =
+        Path.wildcard(Path.join(char_dir, "profile-v*.fountain"))
+        |> Enum.sort_by(&version_from_filename/1)
+
+      first_file = List.first(profile_files)
+      headers = first_file |> File.read!() |> parse_fountain_headers()
+      name = Map.fetch!(headers, "Title")
+
+      char =
+        Character
+        |> Ash.Changeset.for_create(:create, %{name: name, story_id: story.id})
+        |> Ash.create!(authorize?: false)
+
+      for file <- profile_files do
+        content = File.read!(file)
+
+        CharacterPiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          character_id: char.id,
+          content: content
+        })
+        |> Ash.run_action!(authorize?: false)
+      end
+
+      {:ok, char_view} =
+        CharacterView
+        |> Ash.ActionInput.for_action(:ensure_for_character, %{character_id: char.id})
+        |> Ash.run_action(authorize?: false)
+
+      CharacterViewVersion
+      |> Ash.ActionInput.for_action(:cut, %{character_view_id: char_view.id})
+      |> Ash.run_action!(authorize?: false)
+    end
+  end
+
+  defp create_world!(story) do
+    world_dir = Path.join(@base_path, "world/external_world")
+
+    world =
+      World
+      |> Ash.Changeset.for_create(:create, %{story_id: story.id})
+      |> Ash.create!(authorize?: false)
+
+    files =
+      Path.wildcard(Path.join(world_dir, "world-v*.fountain"))
+      |> Enum.sort_by(&version_from_filename/1)
+
+    for file <- files do
+      content = File.read!(file)
+
+      WorldPiece
+      |> Ash.ActionInput.for_action(:create_version, %{
+        world_id: world.id,
+        content: content
+      })
+      |> Ash.run_action!(authorize?: false)
+    end
+
+    {:ok, world_view} =
+      WorldView
+      |> Ash.ActionInput.for_action(:ensure_for_world, %{world_id: world.id})
+      |> Ash.run_action(authorize?: false)
+
+    WorldViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{world_view_id: world_view.id})
+    |> Ash.run_action!(authorize?: false)
+  end
+
+  defp create_scenes!(story) do
+    scenes_dir = Path.join(@base_path, "scenes")
+
+    scene_slugs =
+      File.ls!(scenes_dir)
+      |> Enum.filter(&File.dir?(Path.join(scenes_dir, &1)))
+      |> Enum.sort()
+
+    {scene_map, script_view_map, script_vv_map} =
+      Enum.reduce(scene_slugs, {%{}, %{}, %{}}, fn slug, {scenes, views, vvs} ->
+        scene_dir = Path.join(scenes_dir, slug)
+
+        scene =
+          Scene
+          |> Ash.Changeset.for_create(:create, %{
+            title: slug,
+            slug: slug,
+            story_id: story.id
+          })
+          |> Ash.create!(authorize?: false)
+
+        script_view =
+          ScriptView
+          |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
+          |> Ash.create!(authorize?: false)
+
+        script_files =
+          Path.wildcard(Path.join(scene_dir, "script-v*.fountain"))
+          |> Enum.sort_by(&version_from_filename/1)
+
+        updated_vvs =
+          if script_files != [] do
+            for file <- script_files do
+              content = File.read!(file)
+
+              ScriptPiece
+              |> Ash.ActionInput.for_action(:create_version, %{
+                scene_id: scene.id,
+                content: content
+              })
+              |> Ash.run_action!(authorize?: false)
+            end
+
+            highest_piece =
+              ScriptPiece
+              |> Ash.Query.filter(scene_id == ^scene.id)
+              |> Ash.Query.sort(version_number: :desc)
+              |> Ash.read!(authorize?: false)
+              |> List.first()
+
+            vv =
+              ScriptViewVersion
+              |> Ash.ActionInput.for_action(:cut, %{
+                script_view_id: script_view.id,
+                script_piece_id: highest_piece.id
+              })
+              |> Ash.run_action!(authorize?: false)
+
+            Map.put(vvs, slug, vv)
+          else
+            vvs
+          end
+
+        {Map.put(scenes, slug, scene), Map.put(views, slug, script_view), updated_vvs}
+      end)
+
+    {scene_map, script_view_map, script_vv_map}
+  end
+
+  defp create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map) do
+    for slug <- order do
+      seq = Map.fetch!(sequences_by_slug, slug)
+
+      {:ok, sv} =
+        SequenceView
+        |> Ash.ActionInput.for_action(:ensure_for_sequence, %{
+          sequence_id: seq.id,
+          story_id: story.id
+        })
+        |> Ash.run_action(authorize?: false)
+
+      cuts = read_json("sequence_views/#{slug}_cuts.json")
+      segments = cuts["segments"]
+
+      cond do
+        segments == [] ->
+          SequenceViewVersion
+          |> Ash.ActionInput.for_action(:cut, %{
+            sequence_view_id: sv.id,
+            script_view_version_ids: []
+          })
+          |> Ash.run_action!(authorize?: false)
+
+        Enum.all?(segments, &(not is_nil(&1["pin"]))) ->
+          svv_ids =
+            Enum.map(segments, fn seg ->
+              scene_slug = scene_slug_from_pin(seg["pin"])
+              Map.fetch!(script_vv_map, scene_slug).id
+            end)
+
+          SequenceViewVersion
+          |> Ash.ActionInput.for_action(:cut, %{
+            sequence_view_id: sv.id,
+            script_view_version_ids: svv_ids
+          })
+          |> Ash.run_action!(authorize?: false)
+
+        true ->
+          bypass_cut!(story, sv, segments, script_vv_map)
+      end
+    end
+  end
+
+  defp bypass_cut!(story, sv, segments, script_vv_map) do
+    existing_vvs =
+      SequenceViewVersion
+      |> Ash.Query.filter(sequence_view_id == ^sv.id)
+      |> Ash.read!(authorize?: false)
+
+    next_vn =
+      existing_vvs
+      |> Enum.map(& &1.version_number)
+      |> Enum.max(fn -> 0 end)
+      |> Kernel.+(1)
+
+    vv =
+      SequenceViewVersion
+      |> Ash.Changeset.for_create(:create, %{
+        sequence_view_id: sv.id,
+        version_number: next_vn
+      })
+      |> Ash.create!(authorize?: false)
+
+    segments
+    |> Enum.with_index(1)
+    |> Enum.each(fn {seg, position} ->
+      if is_nil(seg["pin"]) do
+        Segment
+        |> Ash.Changeset.for_create(:create, %{
+          view_version_id: vv.id,
+          view_version_type: :sequence_vv,
+          position: position
+        })
+        |> Ash.create!(authorize?: false)
+      else
+        scene_slug = scene_slug_from_pin(seg["pin"])
+        svv = Map.fetch!(script_vv_map, scene_slug)
+
+        Segment
+        |> Ash.Changeset.for_create(:create, %{
+          view_version_id: vv.id,
+          view_version_type: :sequence_vv,
+          position: position,
+          pin_id: svv.id,
+          pin_type: :script_vv,
+          pin_version_at_creation: svv.version_number
+        })
+        |> Ash.create!(authorize?: false)
+      end
+    end)
+
+    Storybox.Stories.TaskGeneration.after_cut(
+      vv.id,
+      :sequence_vv,
+      sv.id,
+      :story,
+      story.id,
+      story.id
+    )
+  end
+
+  defp read_json(rel_path) do
+    Path.join(@base_path, rel_path)
+    |> File.read!()
+    |> Jason.decode!()
+  end
+
+  defp cleanup_bootstrap_artifacts!(story) do
+    import Ecto.Query
+
+    story_id = Ecto.UUID.dump!(story.id)
+
+    # Remove all tasks — bootstrap cuts created spurious :creation tasks that
+    # can never be resolved by the seed (sequence-1 will be deleted below).
+    Storybox.Repo.delete_all(from t in "tasks", where: t.story_id == ^story_id)
+
+    # Delete TreatmentVV V1 (and its segments) so Phase 7 cuts a fresh V1 that
+    # discovers all 7 seeded sequences once their SequencePieces exist.
+    treatment_view =
+      TreatmentView
+      |> Ash.Query.filter(story_id == ^story.id)
+      |> Ash.read_one!(authorize?: false)
+
+    if treatment_view do
+      tvv_ids =
+        TreatmentViewVersion
+        |> Ash.Query.filter(treatment_view_id == ^treatment_view.id)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(&Ecto.UUID.dump!(&1.id))
+
+      Storybox.Repo.delete_all(from s in "segments", where: s.view_version_id in ^tvv_ids)
+      Storybox.Repo.delete_all(from v in "treatment_view_versions", where: v.id in ^tvv_ids)
+    end
+
+    # Same for SynopsisVV V1.
+    synopsis_view =
+      SynopsisView
+      |> Ash.Query.filter(story_id == ^story.id)
+      |> Ash.read_one!(authorize?: false)
+
+    if synopsis_view do
+      svv_ids =
+        SynopsisViewVersion
+        |> Ash.Query.filter(synopsis_view_id == ^synopsis_view.id)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(&Ecto.UUID.dump!(&1.id))
+
+      Storybox.Repo.delete_all(from s in "segments", where: s.view_version_id in ^svv_ids)
+      Storybox.Repo.delete_all(from v in "synopsis_view_versions", where: v.id in ^svv_ids)
+    end
+
+    # Delete sequence-1 (BootstrapStory default). Its SequencePieces and Segments
+    # must be removed first to satisfy FK constraints.
+    seq1 =
+      Sequence
+      |> Ash.Query.filter(story_id == ^story.id and slug == "sequence-1")
+      |> Ash.read_one!(authorize?: false)
+
+    if seq1 do
+      seq1_id = Ecto.UUID.dump!(seq1.id)
+      Storybox.Repo.delete_all(from p in "sequence_pieces", where: p.sequence_id == ^seq1_id)
+      Storybox.Repo.delete_all(from s in "segments", where: s.sequence_id == ^seq1_id)
+      Storybox.Repo.delete_all(from s in "sequences", where: s.id == ^seq1_id)
+    end
+  end
+
+  defp parse_fountain_headers(content) do
+    content
+    |> String.split("\n")
+    |> Enum.take_while(&(not String.starts_with?(&1, "===")))
+    |> Enum.reduce(%{}, fn line, acc ->
+      case String.split(line, ": ", parts: 2) do
+        [key, value] -> Map.put(acc, String.trim(key), String.trim(value))
+        _ -> acc
+      end
+    end)
+  end
+
+  defp version_from_filename(path) do
+    base = Path.basename(path, ".fountain")
+
+    case Regex.run(~r/-v(\d+)$/, base) do
+      [_, n] -> String.to_integer(n)
+      _ -> 0
+    end
+  end
+
+  defp scene_slug_from_pin(pin_path) do
+    case Regex.run(~r{^scenes/([^/]+)/}, pin_path) do
+      [_, slug] -> slug
+      _ -> raise "Cannot extract scene slug from pin path: #{inspect(pin_path)}"
+    end
+  end
+end
