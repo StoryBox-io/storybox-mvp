@@ -51,6 +51,15 @@ defmodule StoryboxWeb.Router do
     get "/stories/:story_id/tasks", ApiController, :list_tasks
     post "/stories/:story_id/tasks/:id/in_progress", ApiController, :mark_task_in_progress
     post "/stories/:story_id/tasks/:id/complete", ApiController, :mark_task_complete
+    post "/stories/:story_id/views/synopsis/cut", ApiController, :cut_synopsis_vv
+    post "/stories/:story_id/views/treatment/cut", ApiController, :cut_treatment_vv
+
+    post "/stories/:story_id/sequences/:seq_id/views/sequence/cut",
+         ApiController,
+         :cut_sequence_vv
+
+    post "/stories/:story_id/scenes/:scene_id/views/script/cut", ApiController, :cut_script_vv
+    post "/stories/:story_id/views/story_script/cut", ApiController, :cut_story_script_vv
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -385,6 +385,129 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  def cut_synopsis_vv(conn, _params) do
+    story = conn.assigns.current_story
+
+    with {:ok, view} <-
+           Storybox.Stories.SynopsisView
+           |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+           |> Ash.run_action(authorize?: false),
+         {:ok, vv} <-
+           Storybox.Stories.SynopsisViewVersion
+           |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: view.id})
+           |> Ash.run_action(authorize?: false) do
+      conn |> put_status(201) |> json(format_cut_vv(vv, :synopsis_vv))
+    else
+      {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+    end
+  end
+
+  def cut_treatment_vv(conn, _params) do
+    story = conn.assigns.current_story
+
+    with {:ok, view} <-
+           Storybox.Stories.TreatmentView
+           |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+           |> Ash.run_action(authorize?: false),
+         {:ok, vv} <-
+           Storybox.Stories.TreatmentViewVersion
+           |> Ash.ActionInput.for_action(:cut, %{treatment_view_id: view.id})
+           |> Ash.run_action(authorize?: false) do
+      conn |> put_status(201) |> json(format_cut_vv(vv, :treatment_vv))
+    else
+      {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+    end
+  end
+
+  def cut_story_script_vv(conn, _params) do
+    story = conn.assigns.current_story
+
+    with {:ok, view} <-
+           Storybox.Stories.StoryScriptView
+           |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+           |> Ash.run_action(authorize?: false),
+         {:ok, vv} <-
+           Storybox.Stories.StoryScriptViewVersion
+           |> Ash.ActionInput.for_action(:cut, %{story_script_view_id: view.id})
+           |> Ash.run_action(authorize?: false) do
+      conn |> put_status(201) |> json(format_cut_vv(vv, :story_script_vv))
+    else
+      {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+    end
+  end
+
+  def cut_sequence_vv(conn, %{"seq_id" => seq_id} = params) do
+    story = conn.assigns.current_story
+    script_view_version_ids = Map.get(params, "script_view_version_ids", [])
+
+    case load_sequence_for_story(seq_id, story.id) do
+      nil ->
+        conn |> put_status(404) |> json(%{error: "not found"})
+
+      sequence ->
+        with {:ok, view} <-
+               Storybox.Stories.SequenceView
+               |> Ash.ActionInput.for_action(:ensure_for_sequence, %{
+                 sequence_id: sequence.id,
+                 story_id: story.id
+               })
+               |> Ash.run_action(authorize?: false),
+             {:ok, vv} <-
+               Storybox.Stories.SequenceViewVersion
+               |> Ash.ActionInput.for_action(:cut, %{
+                 sequence_view_id: view.id,
+                 script_view_version_ids: script_view_version_ids
+               })
+               |> Ash.run_action(authorize?: false) do
+          conn |> put_status(201) |> json(format_cut_vv(vv, :sequence_vv))
+        else
+          {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+        end
+    end
+  end
+
+  def cut_script_vv(conn, %{"scene_id" => scene_id} = params) do
+    case params["script_piece_id"] do
+      nil ->
+        conn |> put_status(400) |> json(%{error: "script_piece_id is required"})
+
+      script_piece_id ->
+        scene =
+          Storybox.Stories.Scene
+          |> Ash.Query.filter(id == ^scene_id)
+          |> Ash.read_one!(authorize?: false)
+
+        if is_nil(scene) do
+          conn |> put_status(404) |> json(%{error: "not found"})
+        else
+          piece =
+            Storybox.Stories.ScriptPiece
+            |> Ash.Query.filter(id == ^script_piece_id and scene_id == ^scene.id)
+            |> Ash.read_one!(authorize?: false)
+
+          if is_nil(piece) do
+            conn |> put_status(404) |> json(%{error: "not found"})
+          else
+            with {:ok, view} <-
+                   Storybox.Stories.ScriptView
+                   |> Ash.ActionInput.for_action(:ensure_for_scene, %{scene_id: scene.id})
+                   |> Ash.run_action(authorize?: false),
+                 {:ok, vv} <-
+                   Storybox.Stories.ScriptViewVersion
+                   |> Ash.ActionInput.for_action(:cut, %{
+                     script_view_id: view.id,
+                     script_piece_id: piece.id
+                   })
+                   |> Ash.run_action(authorize?: false) do
+              conn |> put_status(201) |> json(format_cut_vv(vv, :script_vv))
+            else
+              {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+            end
+          end
+        end
+    end
+  end
+
   defp load_task_for_story(task_id, story_id) do
     Storybox.Stories.Task
     |> Ash.Query.filter(id == ^task_id and story_id == ^story_id)
@@ -422,6 +545,26 @@ defmodule StoryboxWeb.ApiController do
       inserted_at: task.inserted_at,
       updated_at: task.updated_at
     }
+  end
+
+  defp format_cut_vv(vv, vv_type) do
+    unresolvable =
+      Storybox.Stories.Segment
+      |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == ^vv_type)
+      |> Ash.read!(authorize?: false)
+      |> Enum.filter(fn seg -> is_nil(seg.pin_id) end)
+      |> Enum.map(fn seg ->
+        base = %{id: seg.id, position: seg.position}
+        if seg.sequence_id, do: Map.put(base, :sequence_id, seg.sequence_id), else: base
+      end)
+
+    %{id: vv.id, version_number: vv.version_number, unresolvable_segments: unresolvable}
+  end
+
+  defp load_sequence_for_story(seq_id, story_id) do
+    Storybox.Stories.Sequence
+    |> Ash.Query.filter(id == ^seq_id and story_id == ^story_id)
+    |> Ash.read_one!(authorize?: false)
   end
 
   defp format_version(nil), do: nil
