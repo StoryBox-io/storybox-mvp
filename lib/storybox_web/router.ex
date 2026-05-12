@@ -60,6 +60,7 @@ defmodule StoryboxWeb.Router do
 
     post "/stories/:story_id/scenes/:scene_id/views/script/cut", ApiController, :cut_script_vv
     post "/stories/:story_id/views/story_script/cut", ApiController, :cut_story_script_vv
+    post "/stories/:story_id/sequences/:seq_id/weights", ApiController, :set_sequence_weights
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
