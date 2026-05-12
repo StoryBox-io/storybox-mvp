@@ -539,6 +539,51 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  def set_script_piece_weights(conn, %{"scene_id" => scene_id} = params) do
+    story = conn.assigns.current_story
+    weights = params["weights"]
+
+    if is_nil(weights) or not is_map(weights) do
+      conn |> put_status(400) |> json(%{error: "weights is required"})
+    else
+      scene =
+        Storybox.Stories.Scene
+        |> Ash.Query.filter(id == ^scene_id and story_id == ^story.id)
+        |> Ash.read_one(authorize?: false)
+
+      case scene do
+        {:ok, nil} ->
+          conn |> put_status(404) |> json(%{error: "not found"})
+
+        {:ok, s} ->
+          piece =
+            Storybox.Stories.ScriptPiece
+            |> Ash.Query.filter(scene_id == ^s.id)
+            |> Ash.Query.sort(version_number: :desc)
+            |> Ash.Query.limit(1)
+            |> Ash.read_one(authorize?: false)
+
+          case piece do
+            {:ok, nil} ->
+              conn |> put_status(404) |> json(%{error: "not found"})
+
+            {:ok, p} ->
+              case Ash.Changeset.for_update(p, :set_weights, %{weights: weights})
+                   |> Ash.update(authorize?: false) do
+                {:ok, updated} -> json(conn, format_version(updated))
+                {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+              end
+
+            {:error, _} ->
+              conn |> put_status(500) |> json(%{error: "internal error"})
+          end
+
+        {:error, _} ->
+          conn |> put_status(500) |> json(%{error: "internal error"})
+      end
+    end
+  end
+
   defp load_task_for_story(task_id, story_id) do
     Storybox.Stories.Task
     |> Ash.Query.filter(id == ^task_id and story_id == ^story_id)
