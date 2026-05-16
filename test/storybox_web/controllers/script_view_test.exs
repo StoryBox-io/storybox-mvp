@@ -3,16 +3,37 @@ defmodule StoryboxWeb.ScriptViewTest do
 
   alias Storybox.Accounts.ApiToken
 
-  # Shared setup creates the following structure (no slot intermediary):
+  alias Storybox.Stories.{
+    Scene,
+    ScriptPiece,
+    ScriptView,
+    ScriptViewVersion,
+    Segment,
+    Sequence,
+    SequenceView,
+    SequenceViewVersion,
+    Story,
+    StoryScriptView,
+    StoryScriptViewVersion
+  }
+
+  # The shared setup builds the full V/VV stack the script-view endpoint
+  # traverses:
   #
-  #   story → sv_1 (Cold open) → sp_v1 (EXT. PARK...), sp_v2 (INT. OFFICE...)
-  #         → sv_2 (Inciting incident) → sp_v3 (EXT. STREET...)
-  #         → sv_3 (The argument) → sp_v4 (INT. KITCHEN...)
-  #         → sv_4 (Aftermath)   (no versions)
-  #   snapshot: entries = {sv_1 → sp_v1}  (pins sv_1 to old v1; others not listed)
-  #   other_story: for token isolation tests
+  #   story (full chain)
+  #     StoryScriptView ssv
+  #       ssvv_v1 → pins seq_vv_1   (older snapshot)
+  #       ssvv_v2 → pins seq_vv_2   (latest)
+  #     SequenceView seq_view
+  #       seq_vv_1 → pins scvv_a1, scvv_b1
+  #       seq_vv_2 → pins scvv_a2, scvv_b1
+  #     Scene A: ScriptPieces a_p1 "DRAFT", a_p2 "REVISED"
+  #             ScriptViewVersions scvv_a1 (pins a_p1), scvv_a2 (pins a_p2)
+  #     Scene B: ScriptPiece b_p1 "ONLY"; ScriptViewVersion scvv_b1 (pins b_p1)
   #
-  #   approved_version_id removed in issue #94; mode=approved returns nil for all scenes
+  #   unres_story — StoryScriptVV → SequenceVV with one null-pin Segment
+  #   empty_story — no StoryScriptView at all
+  #   other_story — exists only for the cross-story 403 test
 
   setup do
     {:ok, user} =
@@ -24,96 +45,209 @@ defmodule StoryboxWeb.ScriptViewTest do
       })
       |> Ash.create()
 
-    {:ok, story} =
-      Storybox.Stories.Story
-      |> Ash.Changeset.for_create(:create, %{
-        title: "Script Test Story",
-        through_lines: ["tension"],
-        user_id: user.id
-      })
-      |> Ash.create()
-
-    {:ok, other_story} =
-      Storybox.Stories.Story
-      |> Ash.Changeset.for_create(:create, %{title: "Other Story", user_id: user.id})
-      |> Ash.create()
+    story = create_story(user, "Script Test Story")
+    unres_story = create_story(user, "Unresolvable Story")
+    empty_story = create_story(user, "Empty Story")
+    other_story = create_story(user, "Other Story")
 
     {:ok, raw_token, _} = ApiToken.generate(%{story_id: story.id, user_id: user.id})
+    {:ok, unres_token, _} = ApiToken.generate(%{story_id: unres_story.id, user_id: user.id})
+    {:ok, empty_token, _} = ApiToken.generate(%{story_id: empty_story.id, user_id: user.id})
 
-    make_sv = fn title ->
-      {:ok, scene} =
-        Storybox.Stories.Scene
-        |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
-        |> Ash.create(authorize?: false)
+    # ── main story: full resolvable chain ────────────────────────────────────
+    scene_a = create_scene(story, "Scene A")
+    scv_a = create_script_view(scene_a)
+    a_p1 = create_script_piece(scene_a, "SCENE A — DRAFT")
+    a_p2 = create_script_piece(scene_a, "SCENE A — REVISED")
+    scvv_a1 = create_script_vv(scv_a, 1, a_p1)
+    scvv_a2 = create_script_vv(scv_a, 2, a_p2)
 
-      {:ok, sv} =
-        Storybox.Stories.ScriptView
-        |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
-        |> Ash.create(authorize?: false)
+    scene_b = create_scene(story, "Scene B")
+    scv_b = create_script_view(scene_b)
+    b_p1 = create_script_piece(scene_b, "SCENE B — ONLY")
+    scvv_b1 = create_script_vv(scv_b, 1, b_p1)
 
-      {sv, scene}
-    end
+    seq = create_sequence(story, "Main Sequence", "sequence-main")
+    seq_view = create_sequence_view(story, seq)
 
-    {sv_1, scene_1} = make_sv.("Cold open")
-    {sv_2, scene_2} = make_sv.("Inciting incident")
-    {_sv_3, scene_3} = make_sv.("The argument")
-    {sv_4, _scene_4} = make_sv.("Aftermath")
+    seq_vv_1 =
+      create_sequence_vv(seq_view, 1, [pin(:script_vv, scvv_a1), pin(:script_vv, scvv_b1)])
 
-    {:ok, sp_v1} =
-      Storybox.Stories.ScriptPiece
-      |> Ash.ActionInput.for_action(:create_version, %{
-        scene_id: scene_1.id,
-        content: "EXT. PARK - DAY\n\nFirst draft."
-      })
+    seq_vv_2 =
+      create_sequence_vv(seq_view, 2, [pin(:script_vv, scvv_a2), pin(:script_vv, scvv_b1)])
+
+    ssv = create_story_script_view(story)
+    ssvv_v1 = create_story_script_vv(ssv, 1, [pin(:sequence_vv, seq_vv_1)])
+    ssvv_v2 = create_story_script_vv(ssv, 2, [pin(:sequence_vv, seq_vv_2)])
+
+    # ── unresolvable story: SequenceVV carries a null-pin Segment ────────────
+    u_seq = create_sequence(unres_story, "U Sequence", "u-sequence")
+    u_seq_view = create_sequence_view(unres_story, u_seq)
+    u_seq_vv = create_sequence_vv(u_seq_view, 1, [nil])
+    u_ssv = create_story_script_view(unres_story)
+    create_story_script_vv(u_ssv, 1, [pin(:sequence_vv, u_seq_vv)])
+
+    %{
+      user: user,
+      story: story,
+      unres_story: unres_story,
+      empty_story: empty_story,
+      other_story: other_story,
+      raw_token: raw_token,
+      unres_token: unres_token,
+      empty_token: empty_token,
+      scene_a: scene_a,
+      ssvv_v1: ssvv_v1,
+      ssvv_v2: ssvv_v2,
+      u_seq_vv: u_seq_vv
+    }
+  end
+
+  # ── resource builders ────────────────────────────────────────────────────
+
+  defp create_story(user, title) do
+    {:ok, story} =
+      Story
+      |> Ash.Changeset.for_create(:create, %{title: title, user_id: user.id})
+      |> Ash.create()
+
+    story
+  end
+
+  defp create_scene(story, title) do
+    {:ok, scene} =
+      Scene
+      |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
+      |> Ash.create(authorize?: false)
+
+    scene
+  end
+
+  defp create_script_view(scene) do
+    {:ok, sv} =
+      ScriptView
+      |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
+      |> Ash.create(authorize?: false)
+
+    sv
+  end
+
+  defp create_script_piece(scene, content) do
+    {:ok, piece} =
+      ScriptPiece
+      |> Ash.ActionInput.for_action(:create_version, %{scene_id: scene.id, content: content})
       |> Ash.run_action(authorize?: false)
 
-    {:ok, sp_v2} =
-      Storybox.Stories.ScriptPiece
-      |> Ash.ActionInput.for_action(:create_version, %{
-        scene_id: scene_1.id,
-        content: "INT. OFFICE - NIGHT\n\nRevised."
-      })
-      |> Ash.run_action(authorize?: false)
+    piece
+  end
 
-    {:ok, _sp_v3} =
-      Storybox.Stories.ScriptPiece
-      |> Ash.ActionInput.for_action(:create_version, %{
-        scene_id: scene_2.id,
-        content: "EXT. STREET - DAY\n\nSomething happens."
-      })
-      |> Ash.run_action(authorize?: false)
-
-    {:ok, _sp_v4} =
-      Storybox.Stories.ScriptPiece
-      |> Ash.ActionInput.for_action(:create_version, %{
-        scene_id: scene_3.id,
-        content: "INT. KITCHEN - DAY\n\nThey argue."
-      })
-      |> Ash.run_action(authorize?: false)
-
-    # Snapshot pins sv_1 to sp_v1 (its old version, not the currently approved sp_v2)
-    {:ok, snapshot} =
-      Storybox.Stories.ScriptSnapshot
+  defp create_script_vv(script_view, version_number, piece) do
+    {:ok, vv} =
+      ScriptViewVersion
       |> Ash.Changeset.for_create(:create, %{
-        name: "Test snapshot",
-        story_id: story.id,
-        entries: %{to_string(sv_1.id) => to_string(sp_v1.id)}
+        script_view_id: script_view.id,
+        version_number: version_number
       })
       |> Ash.create(authorize?: false)
 
-    %{
-      story: story,
-      other_story: other_story,
-      raw_token: raw_token,
-      sv_1: sv_1,
-      sv_2: sv_2,
-      sv_4: sv_4,
-      scene_1: scene_1,
-      sp_v1: sp_v1,
-      sp_v2: sp_v2,
-      snapshot: snapshot
-    }
+    create_segment(vv.id, :script_vv, 1, pin(:script_piece, piece))
+    vv
   end
+
+  defp create_sequence(story, name, slug) do
+    {:ok, seq} =
+      Sequence
+      |> Ash.Changeset.for_create(:create, %{story_id: story.id, name: name, slug: slug})
+      |> Ash.create(authorize?: false)
+
+    seq
+  end
+
+  defp create_sequence_view(story, sequence) do
+    {:ok, sv} =
+      SequenceView
+      |> Ash.Changeset.for_create(:create, %{story_id: story.id, sequence_id: sequence.id})
+      |> Ash.create(authorize?: false)
+
+    sv
+  end
+
+  defp create_sequence_vv(sequence_view, version_number, pins) do
+    {:ok, vv} =
+      SequenceViewVersion
+      |> Ash.Changeset.for_create(:create, %{
+        sequence_view_id: sequence_view.id,
+        version_number: version_number
+      })
+      |> Ash.create(authorize?: false)
+
+    create_pinned_segments(vv.id, :sequence_vv, pins)
+    vv
+  end
+
+  defp create_story_script_view(story) do
+    {:ok, ssv} =
+      StoryScriptView
+      |> Ash.Changeset.for_create(:create, %{story_id: story.id})
+      |> Ash.create(authorize?: false)
+
+    ssv
+  end
+
+  defp create_story_script_vv(story_script_view, version_number, pins) do
+    {:ok, vv} =
+      StoryScriptViewVersion
+      |> Ash.Changeset.for_create(:create, %{
+        story_script_view_id: story_script_view.id,
+        version_number: version_number,
+        source_treatment_view_version_id: Ash.UUID.generate()
+      })
+      |> Ash.create(authorize?: false)
+
+    create_pinned_segments(vv.id, :story_script_vv, pins)
+    vv
+  end
+
+  # `pin/2` produces the {pin_type, pin_id, pin_version} tuple a Segment needs.
+  defp pin(pin_type, target), do: {pin_type, target.id, target.version_number}
+
+  defp create_pinned_segments(view_version_id, view_version_type, pins) do
+    pins
+    |> Enum.with_index(1)
+    |> Enum.each(fn {pin, position} ->
+      create_segment(view_version_id, view_version_type, position, pin)
+    end)
+  end
+
+  defp create_segment(view_version_id, view_version_type, position, pin) do
+    attrs = %{
+      view_version_id: view_version_id,
+      view_version_type: view_version_type,
+      position: position
+    }
+
+    attrs =
+      case pin do
+        nil ->
+          attrs
+
+        {pin_type, pin_id, pin_version} ->
+          Map.merge(attrs, %{
+            pin_id: pin_id,
+            pin_type: pin_type,
+            pin_version_at_creation: pin_version
+          })
+      end
+
+    {:ok, seg} =
+      Segment
+      |> Ash.Changeset.for_create(:create, attrs)
+      |> Ash.create(authorize?: false)
+
+    seg
+  end
+
+  # ── request helpers ──────────────────────────────────────────────────────
 
   defp authed(conn, raw_token), do: put_req_header(conn, "authorization", "Bearer #{raw_token}")
 
@@ -122,55 +256,129 @@ defmodule StoryboxWeb.ScriptViewTest do
     conn |> authed(raw_token) |> get("/api/stories/#{story.id}/views/script?#{query}")
   end
 
-  defp find_scene(body, title), do: Enum.find(body["scenes"], &(&1["title"] == title))
+  # ── mode=latest ──────────────────────────────────────────────────────────
 
-  # ── mode=latest ─────────────────────────────────────────────────────────────
-
-  describe "GET /api/stories/:story_id/views/script?mode=latest" do
-    test "returns all scenes resolved to their highest-numbered version with content", %{
+  describe "GET /api/stories/:story_id/views/script — mode=latest" do
+    test "assembles the latest content in sequence order", %{
       conn: conn,
       story: story,
-      raw_token: raw_token
+      raw_token: raw_token,
+      ssvv_v2: ssvv_v2
     } do
       conn = get_script(conn, story, raw_token, %{mode: "latest"})
       body = json_response(conn, 200)
 
-      assert body["story_id"] == story.id
+      assert body["format"] == "fountain"
       assert body["mode"] == "latest"
-      assert body["snapshot_id"] == nil
-      assert length(body["scenes"]) == 4
-
-      cold_open = find_scene(body, "Cold open")
-      assert cold_open["version"]["version_number"] == 2
-      assert cold_open["content"] == "INT. OFFICE - NIGHT\n\nRevised."
-
-      inciting = find_scene(body, "Inciting incident")
-      assert inciting["version"]["version_number"] == 1
-      assert inciting["content"] == "EXT. STREET - DAY\n\nSomething happens."
+      assert body["resolved"] == true
+      assert body["unresolvable"] == []
+      assert body["story_script_view_version_id"] == ssvv_v2.id
+      assert body["content"] == "SCENE A — REVISED\n\nSCENE B — ONLY"
     end
 
-    test "scene with no versions returns null version and null content without crashing", %{
+    test "missing mode param behaves as mode=latest", %{
       conn: conn,
       story: story,
-      raw_token: raw_token,
-      sv_4: sv_4
+      raw_token: raw_token
     } do
-      conn = get_script(conn, story, raw_token, %{mode: "latest"})
-      aftermath = find_scene(json_response(conn, 200), "Aftermath")
+      explicit = get_script(conn, story, raw_token, %{mode: "latest"}) |> json_response(200)
 
-      assert aftermath["id"] == sv_4.id
-      assert aftermath["version"] == nil
-      assert aftermath["content"] == nil
+      default =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/script")
+        |> json_response(200)
+
+      assert default == explicit
+    end
+
+    test "unresolvable SequenceVV Segment yields resolved: false with a sequence-layer entry", %{
+      conn: conn,
+      unres_story: unres_story,
+      unres_token: unres_token,
+      u_seq_vv: u_seq_vv
+    } do
+      conn = get_script(conn, unres_story, unres_token, %{mode: "latest"})
+      body = json_response(conn, 200)
+
+      assert body["resolved"] == false
+      assert body["content"] == ""
+
+      assert [
+               %{
+                 "layer" => "sequence",
+                 "sequence_view_version_id" => seq_vv_id,
+                 "position" => 1
+               }
+             ] = body["unresolvable"]
+
+      assert seq_vv_id == u_seq_vv.id
+    end
+
+    test "story with no StoryScriptViewVersion returns resolved: false and empty content", %{
+      conn: conn,
+      empty_story: empty_story,
+      empty_token: empty_token
+    } do
+      conn = get_script(conn, empty_story, empty_token, %{mode: "latest"})
+      body = json_response(conn, 200)
+
+      assert body["resolved"] == false
+      assert body["story_script_view_version_id"] == nil
+      assert body["content"] == ""
+      assert body["unresolvable"] == []
     end
   end
 
-  # ── mode=approved ────────────────────────────────────────────────────────────
-  # approved_version_id was removed in issue #94; approval redesigned via
-  # ScriptViewVersion. All scenes return nil version and nil content until
-  # the new approval mechanism is implemented.
+  # ── mode=snapshot ────────────────────────────────────────────────────────
 
-  describe "GET /api/stories/:story_id/views/script?mode=approved" do
-    test "all scenes return nil version and nil content", %{
+  describe "GET /api/stories/:story_id/views/script — mode=snapshot" do
+    test "follows the discrete pins of the addressed StoryScriptViewVersion", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token,
+      ssvv_v1: ssvv_v1
+    } do
+      conn = get_script(conn, story, raw_token, %{mode: "snapshot", snapshot_id: ssvv_v1.id})
+      body = json_response(conn, 200)
+
+      assert body["mode"] == "snapshot"
+      assert body["resolved"] == true
+      assert body["story_script_view_version_id"] == ssvv_v1.id
+      # v1 pins the older chain, so snapshot mode yields DRAFT, not REVISED
+      assert body["content"] == "SCENE A — DRAFT\n\nSCENE B — ONLY"
+    end
+
+    test "unknown snapshot_id returns 404", %{conn: conn, story: story, raw_token: raw_token} do
+      conn =
+        get_script(conn, story, raw_token, %{
+          mode: "snapshot",
+          snapshot_id: Ash.UUID.generate()
+        })
+
+      assert json_response(conn, 404)["error"] == "snapshot not found"
+    end
+
+    test "snapshot_id belonging to a different story returns 404", %{
+      conn: conn,
+      unres_story: unres_story,
+      unres_token: unres_token,
+      ssvv_v1: ssvv_v1
+    } do
+      conn =
+        get_script(conn, unres_story, unres_token, %{
+          mode: "snapshot",
+          snapshot_id: ssvv_v1.id
+        })
+
+      assert json_response(conn, 404)["error"] == "snapshot not found"
+    end
+  end
+
+  # ── mode=approved ────────────────────────────────────────────────────────
+
+  describe "GET /api/stories/:story_id/views/script — mode=approved" do
+    test "returns resolved: false with empty content (no approval recorded)", %{
       conn: conn,
       story: story,
       raw_token: raw_token
@@ -179,85 +387,16 @@ defmodule StoryboxWeb.ScriptViewTest do
       body = json_response(conn, 200)
 
       assert body["mode"] == "approved"
-
-      Enum.each(body["scenes"], fn scene ->
-        assert scene["version"] == nil
-        assert scene["content"] == nil
-      end)
+      assert body["resolved"] == false
+      assert body["story_script_view_version_id"] == nil
+      assert body["content"] == ""
+      assert body["unresolvable"] == []
     end
   end
 
-  # ── mode=snapshot ────────────────────────────────────────────────────────────
-
-  describe "GET /api/stories/:story_id/views/script?mode=snapshot" do
-    test "resolves sv_1 to sp_v1 via the snapshot entries map, not the current approved sp_v2", %{
-      conn: conn,
-      story: story,
-      raw_token: raw_token,
-      snapshot: snapshot
-    } do
-      conn = get_script(conn, story, raw_token, %{mode: "snapshot", snapshot_id: snapshot.id})
-      body = json_response(conn, 200)
-
-      assert body["snapshot_id"] == snapshot.id
-
-      cold_open = find_scene(body, "Cold open")
-      assert cold_open["version"]["version_number"] == 1
-      assert cold_open["content"] == "EXT. PARK - DAY\n\nFirst draft."
-    end
-
-    test "scenes not listed in the snapshot entries return null version and null content", %{
-      conn: conn,
-      story: story,
-      raw_token: raw_token,
-      snapshot: snapshot
-    } do
-      conn = get_script(conn, story, raw_token, %{mode: "snapshot", snapshot_id: snapshot.id})
-      body = json_response(conn, 200)
-
-      inciting = find_scene(body, "Inciting incident")
-      assert inciting["version"] == nil
-      assert inciting["content"] == nil
-
-      argument = find_scene(body, "The argument")
-      assert argument["version"] == nil
-      assert argument["content"] == nil
-
-      aftermath = find_scene(body, "Aftermath")
-      assert aftermath["version"] == nil
-      assert aftermath["content"] == nil
-    end
-
-    test "snapshot belonging to a different story returns 404", %{
-      conn: conn,
-      story: story,
-      other_story: other_story,
-      raw_token: raw_token
-    } do
-      {:ok, other_snapshot} =
-        Storybox.Stories.ScriptSnapshot
-        |> Ash.Changeset.for_create(:create, %{
-          name: "Other",
-          story_id: other_story.id,
-          entries: %{}
-        })
-        |> Ash.create(authorize?: false)
-
-      conn =
-        get_script(conn, story, raw_token, %{mode: "snapshot", snapshot_id: other_snapshot.id})
-
-      assert json_response(conn, 404)["error"] == "snapshot not found"
-    end
-  end
-
-  # ── parameter validation ─────────────────────────────────────────────────────
+  # ── parameter validation ─────────────────────────────────────────────────
 
   describe "parameter validation" do
-    test "missing mode param returns 400", %{conn: conn, story: story, raw_token: raw_token} do
-      conn = conn |> authed(raw_token) |> get("/api/stories/#{story.id}/views/script")
-      assert json_response(conn, 400)["error"] == "mode is required"
-    end
-
     test "unrecognised mode value returns 400", %{conn: conn, story: story, raw_token: raw_token} do
       conn = get_script(conn, story, raw_token, %{mode: "draft"})
       assert json_response(conn, 400)["error"] == "mode must be latest, approved, or snapshot"
@@ -273,7 +412,7 @@ defmodule StoryboxWeb.ScriptViewTest do
     end
   end
 
-  # ── auth & content guard ─────────────────────────────────────────────────────
+  # ── auth & content guards ────────────────────────────────────────────────
 
   describe "auth and content guards" do
     test "token scoped to a different story returns 403", %{
@@ -289,18 +428,20 @@ defmodule StoryboxWeb.ScriptViewTest do
       assert json_response(conn, 403)["error"] == "forbidden"
     end
 
-    test "version with a missing MinIO object returns 503", %{
+    test "a missing MinIO object returns 503", %{
       conn: conn,
       story: story,
       raw_token: raw_token,
-      scene_1: scene_1
+      scene_a: scene_a
     } do
-      {:ok, _bad_version} =
-        Storybox.Stories.ScriptPiece
+      # A newer ScriptPiece becomes the lineage head for Scene A, but its
+      # content object does not exist in storage.
+      {:ok, _bad_piece} =
+        ScriptPiece
         |> Ash.Changeset.for_create(:create, %{
-          scene_id: scene_1.id,
-          content_uri: "storybox://scenes/#{scene_1.id}/script_pieces/v999_nonexistent.fountain",
-          version_number: 99,
+          scene_id: scene_a.id,
+          content_uri: "storybox://scenes/#{scene_a.id}/script_pieces/v999_missing.fountain",
+          version_number: 999,
           weights: %{}
         })
         |> Ash.create(authorize?: false)
@@ -308,21 +449,28 @@ defmodule StoryboxWeb.ScriptViewTest do
       conn = get_script(conn, story, raw_token, %{mode: "latest"})
       assert json_response(conn, 503)["error"] == "content unavailable"
     end
+  end
 
-    test "response does not expose content_uri in any version object", %{
-      conn: conn,
-      story: story,
-      raw_token: raw_token
-    } do
-      conn = get_script(conn, story, raw_token, %{mode: "latest"})
+  # ── ConnCase: seeded Little Witch story ──────────────────────────────────
+
+  describe "seeded Little Witch story" do
+    test "assembles the full screenplay via the V/VV stack", %{conn: conn, user: user} do
+      lw_story = create_story(user, "Little Witch")
+      :ok = Storybox.Seeds.LittleWitchLoader.seed!(lw_story)
+      {:ok, lw_token, _} = ApiToken.generate(%{story_id: lw_story.id, user_id: user.id})
+
+      conn = get_script(conn, lw_story, lw_token, %{mode: "latest"})
       body = json_response(conn, 200)
 
-      body["scenes"]
-      |> Enum.each(fn scene ->
-        if scene["version"] do
-          refute Map.has_key?(scene["version"], "content_uri")
-        end
-      end)
+      assert body["format"] == "fountain"
+      assert body["mode"] == "latest"
+      assert body["story_script_view_version_id"]
+      assert is_binary(body["content"]) and body["content"] != ""
+
+      # The "reckoning" sequence has one null-pin Segment in the seed data,
+      # so the assembly is not fully resolved and the gap is reported.
+      assert body["resolved"] == false
+      assert [%{"layer" => "sequence"}] = body["unresolvable"]
     end
   end
 end

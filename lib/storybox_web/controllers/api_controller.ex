@@ -98,180 +98,237 @@ defmodule StoryboxWeb.ApiController do
   def script_view(conn, params) do
     story = conn.assigns.current_story
 
-    case parse_script_mode(params) do
+    case parse_script_view_mode(params) do
       {:error, reason} ->
         conn |> put_status(400) |> json(%{error: reason})
 
       {:ok, mode, snapshot_id} ->
-        scenes =
-          Storybox.Stories.Scene
-          |> Ash.Query.filter(story_id == ^story.id)
-          |> Ash.read!(authorize?: false)
-
-        scene_ids = Enum.map(scenes, & &1.id)
-        scenes_by_id = Map.new(scenes, &{&1.id, &1})
-
-        script_views =
-          case scene_ids do
-            [] ->
-              []
-
-            ids ->
-              Storybox.Stories.ScriptView
-              |> Ash.Query.filter(scene_id in ^ids)
-              |> Ash.read!(authorize?: false)
-          end
-
-        script_view_ids = Enum.map(script_views, & &1.id)
-
-        case resolve_script_versions(mode, snapshot_id, story.id, script_views, script_view_ids) do
+        case assemble_script_view(story, mode, snapshot_id) do
           {:error, :snapshot_not_found} ->
             conn |> put_status(404) |> json(%{error: "snapshot not found"})
 
-          {:ok, versions_map} ->
-            case build_script_scenes(script_views, versions_map, scenes_by_id) do
-              {:error, :content_unavailable} ->
-                conn |> put_status(503) |> json(%{error: "content unavailable"})
+          {:error, :content_unavailable} ->
+            conn |> put_status(503) |> json(%{error: "content unavailable"})
 
-              {:ok, scenes_with_content} ->
-                scenes =
-                  script_views
-                  |> Enum.map(fn sv -> scenes_with_content[sv.id] end)
-                  |> Enum.reject(&is_nil/1)
-
-                json(conn, %{
-                  story_id: story.id,
-                  mode: mode,
-                  snapshot_id: snapshot_id,
-                  scenes: scenes
-                })
-            end
+          {:ok, response} ->
+            json(conn, response)
         end
     end
   end
 
-  defp parse_script_mode(%{"mode" => mode} = params)
-       when mode in ["latest", "approved", "snapshot"] do
-    if mode == "snapshot" do
-      case params do
-        %{"snapshot_id" => id} -> {:ok, mode, id}
-        _ -> {:error, "snapshot_id is required when mode is snapshot"}
-      end
-    else
-      {:ok, mode, nil}
+  # `mode` is optional and defaults to "latest". `mode=snapshot` requires a
+  # `snapshot_id` addressing a StoryScriptViewVersion.
+  defp parse_script_view_mode(params) do
+    case Map.get(params, "mode", "latest") do
+      mode when mode in ["latest", "approved"] ->
+        {:ok, mode, nil}
+
+      "snapshot" ->
+        case params do
+          %{"snapshot_id" => id} when is_binary(id) and id != "" ->
+            {:ok, "snapshot", id}
+
+          _ ->
+            {:error, "snapshot_id is required when mode is snapshot"}
+        end
+
+      _ ->
+        {:error, "mode must be latest, approved, or snapshot"}
     end
   end
 
-  defp parse_script_mode(%{"mode" => _}),
-    do: {:error, "mode must be latest, approved, or snapshot"}
-
-  defp parse_script_mode(_), do: {:error, "mode is required"}
-
-  defp resolve_script_versions("latest", _snapshot_id, _story_id, script_views, _script_view_ids) do
-    scene_ids = Enum.map(script_views, & &1.scene_id)
-
-    all_pieces =
-      case scene_ids do
-        [] ->
-          []
-
-        ids ->
-          Storybox.Stories.ScriptPiece
-          |> Ash.Query.filter(scene_id in ^ids)
-          |> Ash.read!(authorize?: false)
-      end
-
-    latest_by_scene =
-      all_pieces
-      |> Enum.group_by(& &1.scene_id)
-      |> Map.new(fn {scene_id, ps} -> {scene_id, Enum.max_by(ps, & &1.version_number)} end)
-
-    versions_map =
-      Map.new(script_views, fn view -> {view.id, latest_by_scene[view.scene_id]} end)
-
-    {:ok, versions_map}
+  # `mode=approved` is a stub: no approval has been recorded, so there is no
+  # StoryScriptViewVersion to traverse (issue #76, orchestrator Q2).
+  defp assemble_script_view(_story, "approved", _snapshot_id) do
+    {:ok, empty_script_view("approved", nil)}
   end
 
-  # approved_version_id was removed from ScriptView in issue #94; approval redesigned
-  # via ScriptViewVersion. Stub returns nil for all scenes pending the new mechanism.
-  defp resolve_script_versions(
-         "approved",
-         _snapshot_id,
-         _story_id,
-         script_views,
-         _script_view_ids
-       ) do
-    versions_map = Map.new(script_views, fn view -> {view.id, nil} end)
-    {:ok, versions_map}
-  end
+  defp assemble_script_view(story, mode, snapshot_id) do
+    story_script_view =
+      Storybox.Stories.StoryScriptView
+      |> Ash.Query.filter(story_id == ^story.id)
+      |> Ash.read_one!(authorize?: false)
 
-  defp resolve_script_versions("snapshot", snapshot_id, story_id, script_views, _script_view_ids) do
-    result =
-      Storybox.Stories.ScriptSnapshot
-      |> Ash.Query.filter(id == ^snapshot_id and story_id == ^story_id)
-      |> Ash.read_one(authorize?: false)
+    case resolve_story_script_vv(mode, snapshot_id, story_script_view) do
+      {:error, reason} ->
+        {:error, reason}
 
-    case result do
       {:ok, nil} ->
-        {:error, :snapshot_not_found}
+        {:ok, empty_script_view(mode, nil)}
 
-      {:ok, snapshot} ->
-        piece_ids = Map.values(snapshot.entries)
+      {:ok, ssvv} ->
+        case traverse_and_build(mode, ssvv) do
+          {:error, reason} ->
+            {:error, reason}
 
-        pieces_by_id =
-          case piece_ids do
-            [] ->
-              %{}
-
-            ids ->
-              Storybox.Stories.ScriptPiece
-              |> Ash.Query.filter(id in ^ids)
-              |> Ash.read!(authorize?: false)
-              |> Map.new(&{to_string(&1.id), &1})
-          end
-
-        versions_map =
-          Map.new(script_views, fn view ->
-            piece_id = snapshot.entries[to_string(view.id)]
-            {view.id, pieces_by_id[piece_id]}
-          end)
-
-        {:ok, versions_map}
-
-      {:error, _} ->
-        {:error, :snapshot_not_found}
+          {:ok, content, unresolvable} ->
+            {:ok,
+             %{
+               format: "fountain",
+               resolved: unresolvable == [],
+               mode: mode,
+               story_script_view_version_id: ssvv.id,
+               unresolvable: unresolvable,
+               content: content
+             }}
+        end
     end
   end
 
-  defp build_script_scenes(script_views, versions_map, scenes_by_id) do
-    Enum.reduce_while(script_views, {:ok, %{}}, fn view, {:ok, acc} ->
-      piece = versions_map[view.id]
-      scene_record = scenes_by_id[view.scene_id]
+  defp empty_script_view(mode, ssvv_id) do
+    %{
+      format: "fountain",
+      resolved: false,
+      mode: mode,
+      story_script_view_version_id: ssvv_id,
+      unresolvable: [],
+      content: ""
+    }
+  end
 
-      case fetch_scene_content(piece) do
-        {:error, :content_unavailable} ->
-          {:halt, {:error, :content_unavailable}}
+  # Resolves the StoryScriptViewVersion to traverse: latest for "latest",
+  # the exact VV addressed by `snapshot_id` for "snapshot". A snapshot_id that
+  # does not belong to this story's StoryScriptView is treated as not found.
+  defp resolve_story_script_vv("snapshot", _snapshot_id, nil), do: {:error, :snapshot_not_found}
 
-        {:ok, content} ->
-          scene = %{
-            id: view.id,
-            title: scene_record && scene_record.title,
-            version: format_version(piece),
-            content: content
-          }
+  defp resolve_story_script_vv(_mode, _snapshot_id, nil), do: {:ok, nil}
 
-          {:cont, {:ok, Map.put(acc, view.id, scene)}}
+  defp resolve_story_script_vv("latest", _snapshot_id, story_script_view) do
+    ssvv =
+      Storybox.Stories.StoryScriptViewVersion
+      |> Ash.Query.filter(story_script_view_id == ^story_script_view.id)
+      |> Ash.Query.sort(version_number: :desc)
+      |> Ash.Query.limit(1)
+      |> Ash.read_one!(authorize?: false)
+
+    {:ok, ssvv}
+  end
+
+  defp resolve_story_script_vv("snapshot", snapshot_id, story_script_view) do
+    case Storybox.Stories.StoryScriptViewVersion
+         |> Ash.Query.filter(id == ^snapshot_id and story_script_view_id == ^story_script_view.id)
+         |> Ash.read_one(authorize?: false) do
+      {:ok, nil} -> {:error, :snapshot_not_found}
+      {:ok, ssvv} -> {:ok, ssvv}
+      {:error, _} -> {:error, :snapshot_not_found}
+    end
+  end
+
+  # Walks the V/VV stack StoryScriptVV → SequenceVV → ScriptVV → ScriptPiece.
+  # Returns `{:ok, joined_content, unresolvable}` or `{:error, :content_unavailable}`.
+  # Null-pin Segments at any layer are recorded in `unresolvable` and never
+  # silently skipped.
+  defp traverse_and_build(mode, ssvv) do
+    {sequence_vvs, unresolvable} =
+      ssvv.id
+      |> load_segments(:story_script_vv)
+      |> resolve_layer(mode, nil, [], fn seg, _parent ->
+        %{layer: "story_script", position: seg.position}
+      end)
+
+    {script_vvs, unresolvable} =
+      descend(sequence_vvs, :sequence_vv, mode, unresolvable, fn seg, seq_vv ->
+        %{layer: "sequence", sequence_view_version_id: seq_vv.id, position: seg.position}
+      end)
+
+    {pieces, unresolvable} =
+      descend(script_vvs, :script_vv, mode, unresolvable, fn seg, script_vv ->
+        %{layer: "script", script_view_version_id: script_vv.id, position: seg.position}
+      end)
+
+    case fetch_all_content(pieces) do
+      {:error, :content_unavailable} -> {:error, :content_unavailable}
+      {:ok, fragments} -> {:ok, Enum.join(fragments, "\n\n"), unresolvable}
+    end
+  end
+
+  # For each parent ViewVersion, load its Segments and resolve them, threading
+  # the accumulated `unresolvable` list through.
+  defp descend(parents, view_version_type, mode, unresolvable, unresolvable_entry) do
+    Enum.reduce(parents, {[], unresolvable}, fn parent, {resolved, unres} ->
+      {children, unres} =
+        parent.id
+        |> load_segments(view_version_type)
+        |> resolve_layer(mode, parent, unres, unresolvable_entry)
+
+      {resolved ++ children, unres}
+    end)
+  end
+
+  defp resolve_layer(segments, mode, parent, unresolvable, unresolvable_entry) do
+    Enum.reduce(segments, {[], unresolvable}, fn seg, {resolved, unres} ->
+      case resolve_segment(mode, seg) do
+        nil -> {resolved, unres ++ [unresolvable_entry.(seg, parent)]}
+        target -> {resolved ++ [target], unres}
       end
     end)
   end
 
-  defp fetch_scene_content(nil), do: {:ok, nil}
+  # Resolves a Segment's Pin to the target to traverse into. `snapshot` follows
+  # the discrete pin exactly; `latest` jumps to the lineage head (orchestrator Q1).
+  defp resolve_segment(_mode, %{pin_id: nil}), do: nil
 
-  defp fetch_scene_content(piece) do
-    case Storybox.Storage.get_content(piece.content_uri) do
-      {:ok, content} -> {:ok, content}
-      {:error, _} -> {:error, :content_unavailable}
-    end
+  defp resolve_segment("snapshot", %{pin_id: pin_id, pin_type: pin_type}) do
+    load_pin(pin_type, pin_id)
+  end
+
+  defp resolve_segment("latest", %{pin_id: pin_id, pin_type: pin_type}) do
+    pin_type |> load_pin(pin_id) |> lineage_head(pin_type)
+  end
+
+  defp load_pin(:sequence_vv, id), do: read_by_id(Storybox.Stories.SequenceViewVersion, id)
+  defp load_pin(:script_vv, id), do: read_by_id(Storybox.Stories.ScriptViewVersion, id)
+  defp load_pin(:script_piece, id), do: read_by_id(Storybox.Stories.ScriptPiece, id)
+
+  defp lineage_head(nil, _pin_type), do: nil
+
+  defp lineage_head(%{sequence_view_id: sequence_view_id}, :sequence_vv) do
+    Storybox.Stories.SequenceViewVersion
+    |> Ash.Query.filter(sequence_view_id == ^sequence_view_id)
+    |> latest_version()
+  end
+
+  defp lineage_head(%{script_view_id: script_view_id}, :script_vv) do
+    Storybox.Stories.ScriptViewVersion
+    |> Ash.Query.filter(script_view_id == ^script_view_id)
+    |> latest_version()
+  end
+
+  defp lineage_head(%{scene_id: scene_id}, :script_piece) do
+    Storybox.Stories.ScriptPiece
+    |> Ash.Query.filter(scene_id == ^scene_id)
+    |> latest_version()
+  end
+
+  defp latest_version(query) do
+    query
+    |> Ash.Query.sort(version_number: :desc)
+    |> Ash.Query.limit(1)
+    |> Ash.read_one!(authorize?: false)
+  end
+
+  defp read_by_id(resource, id) do
+    resource
+    |> Ash.Query.filter(id == ^id)
+    |> Ash.read_one!(authorize?: false)
+  end
+
+  defp load_segments(view_version_id, view_version_type) do
+    Storybox.Stories.Segment
+    |> Ash.Query.filter(
+      view_version_id == ^view_version_id and view_version_type == ^view_version_type
+    )
+    |> Ash.Query.sort(:position)
+    |> Ash.read!(authorize?: false)
+  end
+
+  defp fetch_all_content(pieces) do
+    Enum.reduce_while(pieces, {:ok, []}, fn piece, {:ok, acc} ->
+      case Storybox.Storage.get_content(piece.content_uri) do
+        {:ok, content} -> {:cont, {:ok, acc ++ [content]}}
+        {:error, _} -> {:halt, {:error, :content_unavailable}}
+      end
+    end)
   end
 
   def create_scene_version(conn, %{"id" => id} = params) do
