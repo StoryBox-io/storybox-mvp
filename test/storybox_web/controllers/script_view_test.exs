@@ -1,21 +1,10 @@
 defmodule StoryboxWeb.ScriptViewTest do
   use StoryboxWeb.ConnCase
 
-  alias Storybox.Accounts.ApiToken
+  import StoryboxWeb.ScriptViewHelpers
 
-  alias Storybox.Stories.{
-    Scene,
-    ScriptPiece,
-    ScriptView,
-    ScriptViewVersion,
-    Segment,
-    Sequence,
-    SequenceView,
-    SequenceViewVersion,
-    Story,
-    StoryScriptView,
-    StoryScriptViewVersion
-  }
+  alias Storybox.Accounts.ApiToken
+  alias Storybox.Stories.ScriptPiece
 
   # The shared setup builds the full V/VV stack the script-view endpoint
   # traverses:
@@ -101,150 +90,6 @@ defmodule StoryboxWeb.ScriptViewTest do
       ssvv_v2: ssvv_v2,
       u_seq_vv: u_seq_vv
     }
-  end
-
-  # ── resource builders ────────────────────────────────────────────────────
-
-  defp create_story(user, title) do
-    {:ok, story} =
-      Story
-      |> Ash.Changeset.for_create(:create, %{title: title, user_id: user.id})
-      |> Ash.create()
-
-    story
-  end
-
-  defp create_scene(story, title) do
-    {:ok, scene} =
-      Scene
-      |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
-      |> Ash.create(authorize?: false)
-
-    scene
-  end
-
-  defp create_script_view(scene) do
-    {:ok, sv} =
-      ScriptView
-      |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
-      |> Ash.create(authorize?: false)
-
-    sv
-  end
-
-  defp create_script_piece(scene, content) do
-    {:ok, piece} =
-      ScriptPiece
-      |> Ash.ActionInput.for_action(:create_version, %{scene_id: scene.id, content: content})
-      |> Ash.run_action(authorize?: false)
-
-    piece
-  end
-
-  defp create_script_vv(script_view, version_number, piece) do
-    {:ok, vv} =
-      ScriptViewVersion
-      |> Ash.Changeset.for_create(:create, %{
-        script_view_id: script_view.id,
-        version_number: version_number
-      })
-      |> Ash.create(authorize?: false)
-
-    create_segment(vv.id, :script_vv, 1, pin(:script_piece, piece))
-    vv
-  end
-
-  defp create_sequence(story, name, slug) do
-    {:ok, seq} =
-      Sequence
-      |> Ash.Changeset.for_create(:create, %{story_id: story.id, name: name, slug: slug})
-      |> Ash.create(authorize?: false)
-
-    seq
-  end
-
-  defp create_sequence_view(story, sequence) do
-    {:ok, sv} =
-      SequenceView
-      |> Ash.Changeset.for_create(:create, %{story_id: story.id, sequence_id: sequence.id})
-      |> Ash.create(authorize?: false)
-
-    sv
-  end
-
-  defp create_sequence_vv(sequence_view, version_number, pins) do
-    {:ok, vv} =
-      SequenceViewVersion
-      |> Ash.Changeset.for_create(:create, %{
-        sequence_view_id: sequence_view.id,
-        version_number: version_number
-      })
-      |> Ash.create(authorize?: false)
-
-    create_pinned_segments(vv.id, :sequence_vv, pins)
-    vv
-  end
-
-  defp create_story_script_view(story) do
-    {:ok, ssv} =
-      StoryScriptView
-      |> Ash.Changeset.for_create(:create, %{story_id: story.id})
-      |> Ash.create(authorize?: false)
-
-    ssv
-  end
-
-  defp create_story_script_vv(story_script_view, version_number, pins) do
-    {:ok, vv} =
-      StoryScriptViewVersion
-      |> Ash.Changeset.for_create(:create, %{
-        story_script_view_id: story_script_view.id,
-        version_number: version_number,
-        source_treatment_view_version_id: Ash.UUID.generate()
-      })
-      |> Ash.create(authorize?: false)
-
-    create_pinned_segments(vv.id, :story_script_vv, pins)
-    vv
-  end
-
-  # `pin/2` produces the {pin_type, pin_id, pin_version} tuple a Segment needs.
-  defp pin(pin_type, target), do: {pin_type, target.id, target.version_number}
-
-  defp create_pinned_segments(view_version_id, view_version_type, pins) do
-    pins
-    |> Enum.with_index(1)
-    |> Enum.each(fn {pin, position} ->
-      create_segment(view_version_id, view_version_type, position, pin)
-    end)
-  end
-
-  defp create_segment(view_version_id, view_version_type, position, pin) do
-    attrs = %{
-      view_version_id: view_version_id,
-      view_version_type: view_version_type,
-      position: position
-    }
-
-    attrs =
-      case pin do
-        nil ->
-          attrs
-
-        {pin_type, pin_id, pin_version} ->
-          Map.merge(attrs, %{
-            pin_id: pin_id,
-            pin_type: pin_type,
-            pin_version_at_creation: pin_version
-          })
-      end
-
-    {:ok, seg} =
-      Segment
-      |> Ash.Changeset.for_create(:create, attrs)
-      |> Ash.create(authorize?: false)
-
-    seg
   end
 
   # ── request helpers ──────────────────────────────────────────────────────
