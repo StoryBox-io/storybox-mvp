@@ -584,6 +584,196 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  def list_characters(conn, _params) do
+    story = conn.assigns.current_story
+
+    characters =
+      Storybox.Stories.Character
+      |> Ash.Query.filter(story_id == ^story.id)
+      |> Ash.read!(authorize?: false)
+
+    json(conn, Enum.map(characters, fn c -> %{id: c.id, name: c.name} end))
+  end
+
+  def character_detail(conn, %{"char_id" => char_id}) do
+    story = conn.assigns.current_story
+
+    case load_character_for_story(char_id, story.id) do
+      nil ->
+        conn |> put_status(404) |> json(%{error: "not found"})
+
+      character ->
+        char_view =
+          Storybox.Stories.CharacterView
+          |> Ash.Query.filter(character_id == ^character.id)
+          |> Ash.read_one!(authorize?: false)
+
+        {latest_vv, segment} =
+          if char_view do
+            vv =
+              Storybox.Stories.CharacterViewVersion
+              |> Ash.Query.filter(character_view_id == ^char_view.id)
+              |> Ash.Query.sort(version_number: :desc)
+              |> Ash.Query.limit(1)
+              |> Ash.read_one!(authorize?: false)
+
+            seg =
+              if vv do
+                char_vv_type = :character_vv
+
+                Storybox.Stories.Segment
+                |> Ash.Query.filter(
+                  view_version_id == ^vv.id and view_version_type == ^char_vv_type
+                )
+                |> Ash.read_one!(authorize?: false)
+              end
+
+            {vv, seg}
+          else
+            {nil, nil}
+          end
+
+        case resolve_piece_content(segment) do
+          {:ok, content} ->
+            json(conn, %{
+              id: character.id,
+              name: character.name,
+              character_view_id: char_view && char_view.id,
+              version_number: latest_vv && latest_vv.version_number,
+              content: content
+            })
+
+          {:error, :content_unavailable} ->
+            conn |> put_status(503) |> json(%{error: "content unavailable"})
+        end
+    end
+  end
+
+  def create_character_piece(conn, %{"char_id" => char_id} = params) do
+    story = conn.assigns.current_story
+    content = params["content"]
+
+    if is_nil(content) or content == "" do
+      conn |> put_status(400) |> json(%{error: "content is required"})
+    else
+      case load_character_for_story(char_id, story.id) do
+        nil ->
+          conn |> put_status(404) |> json(%{error: "not found"})
+
+        character ->
+          with {:ok, _piece} <-
+                 Storybox.Stories.CharacterPiece
+                 |> Ash.ActionInput.for_action(:create_version, %{
+                   character_id: character.id,
+                   content: content
+                 })
+                 |> Ash.run_action(authorize?: false),
+               {:ok, view} <-
+                 Storybox.Stories.CharacterView
+                 |> Ash.ActionInput.for_action(:ensure_for_character, %{
+                   character_id: character.id
+                 })
+                 |> Ash.run_action(authorize?: false),
+               {:ok, vv} <-
+                 Storybox.Stories.CharacterViewVersion
+                 |> Ash.ActionInput.for_action(:cut, %{character_view_id: view.id})
+                 |> Ash.run_action(authorize?: false) do
+            conn |> put_status(201) |> json(format_cut_vv(vv, :character_vv))
+          else
+            {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+          end
+      end
+    end
+  end
+
+  def world_detail(conn, _params) do
+    story = conn.assigns.current_story
+
+    case load_world_for_story(story.id) do
+      nil ->
+        conn |> put_status(404) |> json(%{error: "not found"})
+
+      world ->
+        world_view =
+          Storybox.Stories.WorldView
+          |> Ash.Query.filter(world_id == ^world.id)
+          |> Ash.read_one!(authorize?: false)
+
+        {latest_vv, segment} =
+          if world_view do
+            vv =
+              Storybox.Stories.WorldViewVersion
+              |> Ash.Query.filter(world_view_id == ^world_view.id)
+              |> Ash.Query.sort(version_number: :desc)
+              |> Ash.Query.limit(1)
+              |> Ash.read_one!(authorize?: false)
+
+            seg =
+              if vv do
+                world_vv_type = :world_vv
+
+                Storybox.Stories.Segment
+                |> Ash.Query.filter(
+                  view_version_id == ^vv.id and view_version_type == ^world_vv_type
+                )
+                |> Ash.read_one!(authorize?: false)
+              end
+
+            {vv, seg}
+          else
+            {nil, nil}
+          end
+
+        case resolve_piece_content(segment) do
+          {:ok, content} ->
+            json(conn, %{
+              world_id: world.id,
+              world_view_id: world_view && world_view.id,
+              version_number: latest_vv && latest_vv.version_number,
+              content: content
+            })
+
+          {:error, :content_unavailable} ->
+            conn |> put_status(503) |> json(%{error: "content unavailable"})
+        end
+    end
+  end
+
+  def create_world_piece(conn, params) do
+    story = conn.assigns.current_story
+    content = params["content"]
+
+    if is_nil(content) or content == "" do
+      conn |> put_status(400) |> json(%{error: "content is required"})
+    else
+      case load_world_for_story(story.id) do
+        nil ->
+          conn |> put_status(404) |> json(%{error: "not found"})
+
+        world ->
+          with {:ok, _piece} <-
+                 Storybox.Stories.WorldPiece
+                 |> Ash.ActionInput.for_action(:create_version, %{
+                   world_id: world.id,
+                   content: content
+                 })
+                 |> Ash.run_action(authorize?: false),
+               {:ok, view} <-
+                 Storybox.Stories.WorldView
+                 |> Ash.ActionInput.for_action(:ensure_for_world, %{world_id: world.id})
+                 |> Ash.run_action(authorize?: false),
+               {:ok, vv} <-
+                 Storybox.Stories.WorldViewVersion
+                 |> Ash.ActionInput.for_action(:cut, %{world_view_id: view.id})
+                 |> Ash.run_action(authorize?: false) do
+            conn |> put_status(201) |> json(format_cut_vv(vv, :world_vv))
+          else
+            {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+          end
+      end
+    end
+  end
+
   defp load_task_for_story(task_id, story_id) do
     Storybox.Stories.Task
     |> Ash.Query.filter(id == ^task_id and story_id == ^story_id)
@@ -635,6 +825,46 @@ defmodule StoryboxWeb.ApiController do
       end)
 
     %{id: vv.id, version_number: vv.version_number, unresolvable_segments: unresolvable}
+  end
+
+  defp load_character_for_story(char_id, story_id) do
+    Storybox.Stories.Character
+    |> Ash.Query.filter(id == ^char_id and story_id == ^story_id)
+    |> Ash.read_one!(authorize?: false)
+  end
+
+  defp load_world_for_story(story_id) do
+    Storybox.Stories.World
+    |> Ash.Query.filter(story_id == ^story_id)
+    |> Ash.read_one!(authorize?: false)
+  end
+
+  defp resolve_piece_content(nil), do: {:ok, nil}
+
+  defp resolve_piece_content(%{pin_id: nil}), do: {:ok, nil}
+
+  defp resolve_piece_content(%{pin_id: pin_id, pin_type: :character_piece}) do
+    piece =
+      Storybox.Stories.CharacterPiece
+      |> Ash.Query.filter(id == ^pin_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case Storybox.Storage.get_content(piece.content_uri) do
+      {:ok, content} -> {:ok, content}
+      {:error, _} -> {:error, :content_unavailable}
+    end
+  end
+
+  defp resolve_piece_content(%{pin_id: pin_id, pin_type: :world_piece}) do
+    piece =
+      Storybox.Stories.WorldPiece
+      |> Ash.Query.filter(id == ^pin_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case Storybox.Storage.get_content(piece.content_uri) do
+      {:ok, content} -> {:ok, content}
+      {:error, _} -> {:error, :content_unavailable}
+    end
   end
 
   defp load_sequence_for_story(seq_id, story_id) do
