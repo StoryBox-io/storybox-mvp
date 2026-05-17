@@ -98,21 +98,54 @@ defmodule StoryboxWeb.ApiController do
   def script_view(conn, params) do
     story = conn.assigns.current_story
 
-    case parse_script_view_mode(params) do
-      {:error, reason} ->
-        conn |> put_status(400) |> json(%{error: reason})
+    with {:ok, format} <- parse_script_view_format(params),
+         {:ok, mode, snapshot_id} <- parse_script_view_mode(params) do
+      case format do
+        "json" -> respond_json_script_view(conn, story, mode, snapshot_id)
+        "fountain" -> respond_fountain_script_view(conn, story, mode, snapshot_id)
+      end
+    else
+      {:error, reason} -> conn |> put_status(400) |> json(%{error: reason})
+    end
+  end
 
-      {:ok, mode, snapshot_id} ->
-        case assemble_script_view(story, mode, snapshot_id) do
-          {:error, :snapshot_not_found} ->
-            conn |> put_status(404) |> json(%{error: "snapshot not found"})
+  defp respond_json_script_view(conn, story, mode, snapshot_id) do
+    case assemble_script_view(story, mode, snapshot_id) do
+      {:error, :snapshot_not_found} ->
+        conn |> put_status(404) |> json(%{error: "snapshot not found"})
 
-          {:error, :content_unavailable} ->
-            conn |> put_status(503) |> json(%{error: "content unavailable"})
+      {:error, :content_unavailable} ->
+        conn |> put_status(503) |> json(%{error: "content unavailable"})
 
-          {:ok, response} ->
-            json(conn, response)
-        end
+      {:ok, response} ->
+        json(conn, response)
+    end
+  end
+
+  # Resolve-then-stream: the full slot list (pieces + null-pin holes) is
+  # traversed and all ScriptPiece content is fetched into memory *before*
+  # `send_chunked` commits the 200. A storage failure therefore still
+  # surfaces as a clean 503 JSON, identical to the JSON path; chunking is
+  # only a delivery detail over already-resolved content (orchestrator Q2).
+  defp respond_fountain_script_view(conn, story, mode, snapshot_id) do
+    case assemble_fountain_script_view(story, mode, snapshot_id) do
+      {:error, :snapshot_not_found} ->
+        conn |> put_status(404) |> json(%{error: "snapshot not found"})
+
+      {:error, :content_unavailable} ->
+        conn |> put_status(503) |> json(%{error: "content unavailable"})
+
+      {:ok, slots} ->
+        stream_fountain(conn, slots)
+    end
+  end
+
+  # `?format=` is optional and defaults to "json". Only "json" and
+  # "fountain" are accepted — anything else is a 400 (orchestrator Q4).
+  defp parse_script_view_format(params) do
+    case Map.get(params, "format", "json") do
+      format when format in ["json", "fountain"] -> {:ok, format}
+      _ -> {:error, "format must be json or fountain"}
     end
   end
 
@@ -329,6 +362,121 @@ defmodule StoryboxWeb.ApiController do
         {:error, _} -> {:halt, {:error, :content_unavailable}}
       end
     end)
+  end
+
+  # ── format=fountain ───────────────────────────────────────────────────────
+
+  # Assembles the ordered slot list for a Fountain stream. Returns
+  # `{:ok, slots}` where each slot is `{:content, fountain_text}` or
+  # `{:unresolved, label}`, in document order — or an `{:error, _}` tuple
+  # that the caller renders as JSON before any chunking begins.
+  defp assemble_fountain_script_view(_story, "approved", _snapshot_id), do: {:ok, []}
+
+  defp assemble_fountain_script_view(story, mode, snapshot_id) do
+    story_script_view =
+      Storybox.Stories.StoryScriptView
+      |> Ash.Query.filter(story_id == ^story.id)
+      |> Ash.read_one!(authorize?: false)
+
+    case resolve_story_script_vv(mode, snapshot_id, story_script_view) do
+      {:error, reason} -> {:error, reason}
+      {:ok, nil} -> {:ok, []}
+      {:ok, ssvv} -> resolve_slot_content(traverse_fountain_slots(mode, ssvv))
+    end
+  end
+
+  # Flat-maps the V/VV stack into a position-ordered slot list. Unlike the
+  # JSON path's two-list accumulation, this interleaves pieces and null-pin
+  # holes so the document order is preserved. Null pins are labelled by the
+  # layer that failed: `sequence-N` at the story_script layer, `scene-position-N`
+  # at the sequence layer, and the real Scene slug at the script layer
+  # (orchestrator Q1).
+  defp traverse_fountain_slots(mode, ssvv) do
+    ssvv.id
+    |> load_segments(:story_script_vv)
+    |> Enum.flat_map(fn seq_seg ->
+      case resolve_segment(mode, seq_seg) do
+        nil ->
+          [{:unresolved, "sequence-#{seq_seg.position}"}]
+
+        seq_vv ->
+          seq_vv.id
+          |> load_segments(:sequence_vv)
+          |> Enum.flat_map(fn script_seg ->
+            case resolve_segment(mode, script_seg) do
+              nil ->
+                [{:unresolved, "scene-position-#{script_seg.position}"}]
+
+              script_vv ->
+                script_vv.id
+                |> load_segments(:script_vv)
+                |> Enum.map(fn piece_seg ->
+                  case resolve_segment(mode, piece_seg) do
+                    nil -> {:unresolved, scene_label_for_script_vv(script_vv)}
+                    piece -> {:piece, piece}
+                  end
+                end)
+            end
+          end)
+      end
+    end)
+  end
+
+  # Looks up the owning Scene for a ScriptViewVersion to label a null script
+  # piece pin. Two extra reads, run only for unresolvable slots.
+  defp scene_label_for_script_vv(script_vv) do
+    with sv when not is_nil(sv) <-
+           read_by_id(Storybox.Stories.ScriptView, script_vv.script_view_id),
+         scene when not is_nil(scene) <- read_by_id(Storybox.Stories.Scene, sv.scene_id) do
+      scene.slug || scene.title || "unknown"
+    else
+      _ -> "unknown"
+    end
+  end
+
+  # Fetches all ScriptPiece content into memory. A storage failure halts with
+  # `{:error, :content_unavailable}` so the caller can still send a 503 JSON.
+  defp resolve_slot_content(slots) do
+    Enum.reduce_while(slots, {:ok, []}, fn
+      {:piece, piece}, {:ok, acc} ->
+        case Storybox.Storage.get_content(piece.content_uri) do
+          {:ok, content} -> {:cont, {:ok, acc ++ [{:content, content}]}}
+          {:error, _} -> {:halt, {:error, :content_unavailable}}
+        end
+
+      {:unresolved, label}, {:ok, acc} ->
+        {:cont, {:ok, acc ++ [{:unresolved, label}]}}
+    end)
+  end
+
+  # Streams the pre-resolved slots as a chunked `text/plain` document. Null-pin
+  # holes emit an inline `/* unresolved: ... */` marker and a trailing summary.
+  defp stream_fountain(conn, slots) do
+    conn =
+      conn
+      |> put_resp_content_type("text/plain")
+      |> send_chunked(200)
+
+    {conn, unresolved} =
+      Enum.reduce(slots, {conn, []}, fn
+        {:content, content}, {conn, unres} ->
+          {:ok, conn} = Plug.Conn.chunk(conn, content <> "\n\n")
+          {conn, unres}
+
+        {:unresolved, label}, {conn, unres} ->
+          {:ok, conn} = Plug.Conn.chunk(conn, "/* unresolved: #{label} */\n\n")
+          {conn, unres ++ [label]}
+      end)
+
+    if unresolved == [] do
+      conn
+    else
+      # Fountain block comments do not nest — labels inside the summary must be
+      # plain text, never the `/* */`-wrapped form used for the inline markers.
+      lines = Enum.map_join(unresolved, "\n", &"  - #{&1}")
+      {:ok, conn} = Plug.Conn.chunk(conn, "/* UNRESOLVED SCENES:\n#{lines}\n*/\n")
+      conn
+    end
   end
 
   def create_scene_version(conn, %{"id" => id} = params) do
