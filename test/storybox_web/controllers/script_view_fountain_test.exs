@@ -173,7 +173,24 @@ defmodule StoryboxWeb.ScriptViewFountainTest do
 
       # The null pin sits at the sequence layer, so it is labelled positionally.
       assert body =~ "/* unresolved: scene-position-1 */"
-      assert body =~ "/* UNRESOLVED SCENES:"
+      assert body =~ "/* UNRESOLVED SCENES:\n  - scene-position-1\n*/"
+    end
+
+    test "the trailing summary block is a single non-nested block comment", %{
+      conn: conn,
+      unres_story: unres_story,
+      unres_token: unres_token
+    } do
+      body =
+        conn
+        |> get_script(unres_story, unres_token, %{format: "fountain", mode: "latest"})
+        |> response(200)
+
+      # Fountain block comments do not nest — a parser closes at the first
+      # `*/`. The summary must wrap plain-text labels, never re-wrap the
+      # `/* */`-formatted inline markers.
+      [_, summary] = String.split(body, "/* UNRESOLVED SCENES:", parts: 2)
+      refute summary =~ "/*"
     end
   end
 

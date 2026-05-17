@@ -471,7 +471,9 @@ defmodule StoryboxWeb.ApiController do
     if unresolved == [] do
       conn
     else
-      lines = Enum.map_join(unresolved, "\n", &"/* unresolved: #{&1} */")
+      # Fountain block comments do not nest — labels inside the summary must be
+      # plain text, never the `/* */`-wrapped form used for the inline markers.
+      lines = Enum.map_join(unresolved, "\n", &"  - #{&1}")
       {:ok, conn} = Plug.Conn.chunk(conn, "/* UNRESOLVED SCENES:\n#{lines}\n*/\n")
       conn
     end
