@@ -57,3 +57,25 @@ Set in `podman-compose.yml`. Override locally by creating a `.env` file (gitigno
 | `MINIO_BUCKET` | `storybox-pieces` | Bucket for piece files |
 | `PHX_HOST` | `localhost` | Phoenix host |
 | `SECRET_KEY_BASE` | dev value | Change in production |
+
+## Seeding Dev Data
+
+```bash
+podman compose -f podman-compose.yml run --rm app mix run priv/repo/seeds.exs
+```
+
+Idempotent — safe to re-run. Creates the dev user and the seeded stories, including a fully-loaded Little Witch.
+
+## Local API Testing
+
+For running a PR's API test plan against the local stack.
+
+- **Base URL**: `http://localhost:4000` (app container `storybox-mvp-app-1`, port 4000)
+- **Dev seed account**: `dev@storybox.test` / `Password1!` (created by `priv/repo/seeds.exs`)
+- **`POST /api/auth/token`** requires `email`, `password`, **and `story_id`** in the JSON body — tokens are story-scoped, so a token for one story returns 403 on another story's endpoints. The response is `{"token": "..."}`; pass it as `Authorization: Bearer <token>`.
+- **Look up story IDs** (the seed assigns fresh UUIDs each run):
+  ```bash
+  podman exec storybox-mvp-db-1 psql -U storybox -d storybox_dev -t -c "SELECT id, title FROM stories ORDER BY title;"
+  ```
+- The seeded stories are `Little Witch` (fully populated), `Beneath the Surface`, and `Echo Chamber` — use a second story's token to exercise cross-story 403 checks.
+- **Caveat**: write-endpoint tests (`POST .../pieces`) mutate the dev seed (bump Piece versions). Re-run the seed to restore clean state.
