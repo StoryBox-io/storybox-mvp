@@ -292,7 +292,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
         scene =
           Scene
           |> Ash.Changeset.for_create(:create, %{
-            title: slug,
+            motif: authored_motif(slug),
             slug: slug,
             story_id: story.id
           })
@@ -344,6 +344,21 @@ defmodule Storybox.Seeds.LittleWitchLoader do
       end)
 
     {scene_map, script_view_map, script_vv_map}
+  end
+
+  # Authored, show-agnostic dramatic motifs for the seeded Little Witch scenes,
+  # keyed by scene directory slug. A slug with no authored motif falls back to nil
+  # (motif is optional). Note `ext_ruins_kestrel` deliberately trips the
+  # WarnCharacterSlugCollision warning (slug token "kestrel" matches the Kestrel
+  # character) — this is expected and non-fatal; renaming is a later authoring pass.
+  defp authored_motif(slug) do
+    %{
+      "ext_coronation_fire" => "the coronation ceremony ignites into chaos",
+      "ext_cottage_night" => "a furtive approach to the cottage under cover of darkness",
+      "ext_ruins_dawn" => "the ruins are surveyed at first light",
+      "ext_ruins_kestrel" => "a confrontation at the ruins draws out an unexpected presence",
+      "int_cottage_night" => "inside the cottage as night closes in around them"
+    }[slug]
   end
 
   defp create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map) do

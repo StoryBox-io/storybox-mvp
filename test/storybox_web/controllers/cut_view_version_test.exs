@@ -64,7 +64,7 @@ defmodule StoryboxWeb.CutViewVersionTest do
 
     {:ok, scene} =
       Storybox.Stories.Scene
-      |> Ash.Changeset.for_create(:create, %{title: "Scene 1", story_id: story.id})
+      |> Ash.Changeset.for_create(:create, %{slug: "scene-1", story_id: story.id})
       |> Ash.create(authorize?: false)
 
     {:ok, _script_view} =
