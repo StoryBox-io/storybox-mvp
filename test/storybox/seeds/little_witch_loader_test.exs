@@ -10,6 +10,7 @@ defmodule Storybox.Seeds.LittleWitchLoaderTest do
     ScriptPiece,
     ScriptView,
     ScriptViewVersion,
+    Segment,
     Sequence,
     SequencePiece,
     SequenceView,
@@ -197,6 +198,50 @@ defmodule Storybox.Seeds.LittleWitchLoaderTest do
         |> Ash.read_one!(authorize?: false)
 
       assert task.target_view_id == reckoning_sv.id
+
+      kestrel_scene = scene_by_slug(story.id, "ext_ruins_kestrel")
+      assert task.target_scene_id == kestrel_scene.id
+    end
+
+    test "Reckoning SequenceVV segments carry scene_id for nil-pin and resolved segments",
+         %{story: story} do
+      Storybox.Seeds.LittleWitchLoader.seed!(story)
+
+      reckoning_seq =
+        Sequence
+        |> Ash.Query.filter(story_id == ^story.id and slug == "reckoning")
+        |> Ash.read_one!(authorize?: false)
+
+      reckoning_sv =
+        SequenceView
+        |> Ash.Query.filter(sequence_id == ^reckoning_seq.id)
+        |> Ash.read_one!(authorize?: false)
+
+      reckoning_vv =
+        SequenceViewVersion
+        |> Ash.Query.filter(sequence_view_id == ^reckoning_sv.id)
+        |> Ash.read!(authorize?: false)
+        |> Enum.max_by(& &1.version_number)
+
+      segments =
+        Segment
+        |> Ash.Query.filter(
+          view_version_id == ^reckoning_vv.id and view_version_type == :sequence_vv
+        )
+        |> Ash.read!(authorize?: false)
+
+      assert length(segments) == 2
+
+      kestrel_scene = scene_by_slug(story.id, "ext_ruins_kestrel")
+      coronation_scene = scene_by_slug(story.id, "ext_coronation_fire")
+
+      nil_pin = Enum.find(segments, &is_nil(&1.pin_id))
+      assert nil_pin, "expected a nil-pin segment in the Reckoning SequenceVV"
+      assert nil_pin.scene_id == kestrel_scene.id
+
+      resolved = Enum.find(segments, &(not is_nil(&1.pin_id)))
+      assert resolved, "expected a resolved segment in the Reckoning SequenceVV"
+      assert resolved.scene_id == coronation_scene.id
     end
 
     test "idempotency — second call is a no-op", %{story: story} do
@@ -231,5 +276,11 @@ defmodule Storybox.Seeds.LittleWitchLoaderTest do
     |> Ash.read!(authorize?: false)
     |> Enum.filter(&(&1.type == :creation))
     |> length()
+  end
+
+  defp scene_by_slug(story_id, slug) do
+    Scene
+    |> Ash.Query.filter(story_id == ^story_id and slug == ^slug)
+    |> Ash.read_one!(authorize?: false)
   end
 end

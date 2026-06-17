@@ -39,6 +39,7 @@ defmodule Storybox.Stories.Segment do
 
     custom_indexes do
       index [:view_version_id, :sequence_id], where: "sequence_id IS NOT NULL"
+      index [:view_version_id, :scene_id], where: "scene_id IS NOT NULL"
     end
   end
 
@@ -68,6 +69,7 @@ defmodule Storybox.Stories.Segment do
 
   relationships do
     belongs_to :sequence, Storybox.Stories.Sequence, allow_nil?: true, public?: true
+    belongs_to :scene, Storybox.Stories.Scene, allow_nil?: true, public?: true
   end
 
   identities do
@@ -83,6 +85,7 @@ defmodule Storybox.Stories.Segment do
         :view_version_type,
         :position,
         :sequence_id,
+        :scene_id,
         :pin_id,
         :pin_type,
         :pin_version_at_creation

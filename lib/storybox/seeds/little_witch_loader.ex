@@ -67,7 +67,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
     create_world!(story)
 
     # Phase 6 — Scenes + ScriptPieces
-    {_scene_map, _script_view_map, script_vv_map} = create_scenes!(story)
+    {scene_map, _script_view_map, script_vv_map} = create_scenes!(story)
 
     # Phase 7 — TreatmentView + TreatmentVV
     {:ok, treatment_view} =
@@ -90,7 +90,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
     |> Ash.run_action!(authorize?: false)
 
     # Phase 9 — Per-sequence SequenceViews + SequenceVVs
-    create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map)
+    create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map, scene_map)
 
     # Phase 10 — StoryScriptView + StoryScriptVV
     {:ok, story_script_view} =
@@ -361,7 +361,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
     }[slug]
   end
 
-  defp create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map) do
+  defp create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map, scene_map) do
     for slug <- order do
       seq = Map.fetch!(sequences_by_slug, slug)
 
@@ -400,12 +400,12 @@ defmodule Storybox.Seeds.LittleWitchLoader do
           |> Ash.run_action!(authorize?: false)
 
         true ->
-          bypass_cut!(story, sv, segments, script_vv_map)
+          bypass_cut!(story, sv, segments, script_vv_map, scene_map)
       end
     end
   end
 
-  defp bypass_cut!(story, sv, segments, script_vv_map) do
+  defp bypass_cut!(story, sv, segments, script_vv_map, scene_map) do
     existing_vvs =
       SequenceViewVersion
       |> Ash.Query.filter(sequence_view_id == ^sv.id)
@@ -433,7 +433,8 @@ defmodule Storybox.Seeds.LittleWitchLoader do
         |> Ash.Changeset.for_create(:create, %{
           view_version_id: vv.id,
           view_version_type: :sequence_vv,
-          position: position
+          position: position,
+          scene_id: Map.fetch!(scene_map, seg["scene"]).id
         })
         |> Ash.create!(authorize?: false)
       else
@@ -445,6 +446,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
           view_version_id: vv.id,
           view_version_type: :sequence_vv,
           position: position,
+          scene_id: Map.fetch!(scene_map, scene_slug).id,
           pin_id: svv.id,
           pin_type: :script_vv,
           pin_version_at_creation: svv.version_number
