@@ -18,6 +18,7 @@ defmodule Storybox.Stories.Task do
       index [:status, :inserted_at]
       index [:component_type, :component_id]
       index [:target_view_id]
+      index [:target_scene_id]
     end
   end
 
@@ -36,6 +37,7 @@ defmodule Storybox.Stories.Task do
     attribute :target_view_id, :uuid, allow_nil?: false, public?: true
     attribute :target_view_version_id, :uuid, allow_nil?: true, public?: true
     attribute :target_view_type, :string, allow_nil?: false, public?: true
+    attribute :target_scene_id, :uuid, allow_nil?: true, public?: true
 
     attribute :type, :atom,
       allow_nil?: false,
@@ -67,6 +69,7 @@ defmodule Storybox.Stories.Task do
         :target_view_id,
         :target_view_version_id,
         :target_view_type,
+        :target_scene_id,
         :type,
         :status,
         :triggered_by_piece_id,

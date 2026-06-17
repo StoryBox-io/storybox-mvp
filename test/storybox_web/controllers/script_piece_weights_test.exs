@@ -35,7 +35,7 @@ defmodule StoryboxWeb.ScriptPieceWeightsTest do
 
     {:ok, scene} =
       Storybox.Stories.Scene
-      |> Ash.Changeset.for_create(:create, %{story_id: story.id, title: "Scene 1"})
+      |> Ash.Changeset.for_create(:create, %{story_id: story.id, slug: "scene-1"})
       |> Ash.create(authorize?: false)
 
     {:ok, piece} =
@@ -171,7 +171,7 @@ defmodule StoryboxWeb.ScriptPieceWeightsTest do
     } do
       {:ok, other_scene} =
         Storybox.Stories.Scene
-        |> Ash.Changeset.for_create(:create, %{story_id: other_story.id, title: "Other Scene"})
+        |> Ash.Changeset.for_create(:create, %{story_id: other_story.id, slug: "other-scene"})
         |> Ash.create(authorize?: false)
 
       conn =
@@ -191,7 +191,7 @@ defmodule StoryboxWeb.ScriptPieceWeightsTest do
     } do
       {:ok, empty_scene} =
         Storybox.Stories.Scene
-        |> Ash.Changeset.for_create(:create, %{story_id: story.id, title: "Empty Scene"})
+        |> Ash.Changeset.for_create(:create, %{story_id: story.id, slug: "empty-scene"})
         |> Ash.create(authorize?: false)
 
       conn =

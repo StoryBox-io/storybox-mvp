@@ -20,12 +20,12 @@ defmodule Storybox.Stories.ScriptPieceTest do
 
     {:ok, scene_01} =
       Storybox.Stories.Scene
-      |> Ash.Changeset.for_create(:create, %{title: "INT. COTTAGE - NIGHT", story_id: story.id})
+      |> Ash.Changeset.for_create(:create, %{slug: "int-cottage-night", story_id: story.id})
       |> Ash.create()
 
     {:ok, scene_02} =
       Storybox.Stories.Scene
-      |> Ash.Changeset.for_create(:create, %{title: "EXT. COTTAGE - NIGHT", story_id: story.id})
+      |> Ash.Changeset.for_create(:create, %{slug: "ext-cottage-night", story_id: story.id})
       |> Ash.create()
 
     {:ok, sequence} =

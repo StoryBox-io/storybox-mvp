@@ -25,16 +25,16 @@
       "type": "text"
     },
     {
-      "allow_nil?": true,
-      "default": "%{}",
+      "allow_nil?": false,
+      "default": "nil",
       "generated?": false,
       "precision": null,
       "primary_key?": false,
       "references": null,
       "scale": null,
       "size": null,
-      "source": "entries",
-      "type": "map"
+      "source": "slug",
+      "type": "text"
     },
     {
       "allow_nil?": false,
@@ -46,6 +46,18 @@
       "scale": null,
       "size": null,
       "source": "inserted_at",
+      "type": "utc_datetime_usec"
+    },
+    {
+      "allow_nil?": false,
+      "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "updated_at",
       "type": "utc_datetime_usec"
     },
     {
@@ -67,7 +79,7 @@
           "global": null,
           "strategy": null
         },
-        "name": "script_snapshots_story_id_fkey",
+        "name": "characters_story_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
@@ -86,8 +98,27 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "C4BBA11BCC32202723664E43E9AA9814A3637ED8A2E6558D921AAAF64CDF2E04",
-  "identities": [],
+  "hash": "96565E1275163171504C05FCF2290157EC6742036408AD760C95CD24B958980B",
+  "identities": [
+    {
+      "all_tenants?": false,
+      "base_filter": null,
+      "index_name": "characters_unique_slug_per_story_index",
+      "keys": [
+        {
+          "type": "atom",
+          "value": "story_id"
+        },
+        {
+          "type": "atom",
+          "value": "slug"
+        }
+      ],
+      "name": "unique_slug_per_story",
+      "nils_distinct?": true,
+      "where": null
+    }
+  ],
   "multitenancy": {
     "attribute": null,
     "global": null,
@@ -95,5 +126,5 @@
   },
   "repo": "Elixir.Storybox.Repo",
   "schema": null,
-  "table": "script_snapshots"
+  "table": "characters"
 }

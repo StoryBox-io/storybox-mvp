@@ -67,7 +67,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
     create_world!(story)
 
     # Phase 6 — Scenes + ScriptPieces
-    {_scene_map, _script_view_map, script_vv_map} = create_scenes!(story)
+    {scene_map, _script_view_map, script_vv_map} = create_scenes!(story)
 
     # Phase 7 — TreatmentView + TreatmentVV
     {:ok, treatment_view} =
@@ -90,7 +90,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
     |> Ash.run_action!(authorize?: false)
 
     # Phase 9 — Per-sequence SequenceViews + SequenceVVs
-    create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map)
+    create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map, scene_map)
 
     # Phase 10 — StoryScriptView + StoryScriptVV
     {:ok, story_script_view} =
@@ -219,7 +219,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
 
       char =
         Character
-        |> Ash.Changeset.for_create(:create, %{name: name, story_id: story.id})
+        |> Ash.Changeset.for_create(:create, %{name: name, slug: name_dir, story_id: story.id})
         |> Ash.create!(authorize?: false)
 
       for file <- profile_files do
@@ -292,7 +292,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
         scene =
           Scene
           |> Ash.Changeset.for_create(:create, %{
-            title: slug,
+            motif: authored_motif(slug),
             slug: slug,
             story_id: story.id
           })
@@ -346,7 +346,22 @@ defmodule Storybox.Seeds.LittleWitchLoader do
     {scene_map, script_view_map, script_vv_map}
   end
 
-  defp create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map) do
+  # Authored, show-agnostic dramatic motifs for the seeded Little Witch scenes,
+  # keyed by scene directory slug. A slug with no authored motif falls back to nil
+  # (motif is optional). Note `ext_ruins_kestrel` deliberately trips the
+  # WarnCharacterSlugCollision warning (slug token "kestrel" matches the Kestrel
+  # character) — this is expected and non-fatal; renaming is a later authoring pass.
+  defp authored_motif(slug) do
+    %{
+      "ext_coronation_fire" => "the coronation ceremony ignites into chaos",
+      "ext_cottage_night" => "a furtive approach to the cottage under cover of darkness",
+      "ext_ruins_dawn" => "the ruins are surveyed at first light",
+      "ext_ruins_kestrel" => "a confrontation at the ruins draws out an unexpected presence",
+      "int_cottage_night" => "inside the cottage as night closes in around them"
+    }[slug]
+  end
+
+  defp create_sequence_vvs!(story, sequences_by_slug, order, script_vv_map, scene_map) do
     for slug <- order do
       seq = Map.fetch!(sequences_by_slug, slug)
 
@@ -385,12 +400,12 @@ defmodule Storybox.Seeds.LittleWitchLoader do
           |> Ash.run_action!(authorize?: false)
 
         true ->
-          bypass_cut!(story, sv, segments, script_vv_map)
+          bypass_cut!(story, sv, segments, script_vv_map, scene_map)
       end
     end
   end
 
-  defp bypass_cut!(story, sv, segments, script_vv_map) do
+  defp bypass_cut!(story, sv, segments, script_vv_map, scene_map) do
     existing_vvs =
       SequenceViewVersion
       |> Ash.Query.filter(sequence_view_id == ^sv.id)
@@ -418,7 +433,8 @@ defmodule Storybox.Seeds.LittleWitchLoader do
         |> Ash.Changeset.for_create(:create, %{
           view_version_id: vv.id,
           view_version_type: :sequence_vv,
-          position: position
+          position: position,
+          scene_id: Map.fetch!(scene_map, seg["scene"]).id
         })
         |> Ash.create!(authorize?: false)
       else
@@ -430,6 +446,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
           view_version_id: vv.id,
           view_version_type: :sequence_vv,
           position: position,
+          scene_id: Map.fetch!(scene_map, scene_slug).id,
           pin_id: svv.id,
           pin_type: :script_vv,
           pin_version_at_creation: svv.version_number
