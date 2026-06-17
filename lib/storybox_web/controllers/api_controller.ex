@@ -428,7 +428,7 @@ defmodule StoryboxWeb.ApiController do
     with sv when not is_nil(sv) <-
            read_by_id(Storybox.Stories.ScriptView, script_vv.script_view_id),
          scene when not is_nil(scene) <- read_by_id(Storybox.Stories.Scene, sv.scene_id) do
-      scene.slug || scene.title || "unknown"
+      scene.slug || "unknown"
     else
       _ -> "unknown"
     end

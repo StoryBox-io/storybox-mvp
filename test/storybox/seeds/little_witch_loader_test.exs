@@ -146,7 +146,7 @@ defmodule Storybox.Seeds.LittleWitchLoaderTest do
                |> Ash.count!(authorize?: false)
     end
 
-    test "all scenes have title == slug == directory name", %{story: story} do
+    test "all scenes have a directory-name slug and an authored motif", %{story: story} do
       Storybox.Seeds.LittleWitchLoader.seed!(story)
 
       scenes =
@@ -156,9 +156,20 @@ defmodule Storybox.Seeds.LittleWitchLoaderTest do
 
       assert length(scenes) == 5
 
+      expected_slugs =
+        MapSet.new([
+          "ext_coronation_fire",
+          "ext_cottage_night",
+          "ext_ruins_dawn",
+          "ext_ruins_kestrel",
+          "int_cottage_night"
+        ])
+
+      assert MapSet.new(scenes, & &1.slug) == expected_slugs
+
       for scene <- scenes do
-        assert scene.title == scene.slug,
-               "Scene title #{inspect(scene.title)} != slug #{inspect(scene.slug)}"
+        assert is_binary(scene.motif) and scene.motif != "",
+               "Scene #{inspect(scene.slug)} has no authored motif"
       end
     end
 

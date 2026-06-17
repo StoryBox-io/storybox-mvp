@@ -11,8 +11,8 @@ defmodule Storybox.Stories.Scene do
   attributes do
     uuid_primary_key :id
 
-    attribute :title, :string, allow_nil?: false, public?: true
-    attribute :slug, :string, allow_nil?: true, public?: true
+    attribute :motif, :string, allow_nil?: true, public?: true
+    attribute :slug, :string, allow_nil?: false, public?: true
 
     timestamps()
   end
@@ -23,15 +23,28 @@ defmodule Storybox.Stories.Scene do
     has_many :script_pieces, Storybox.Stories.ScriptPiece, public?: true
   end
 
+  identities do
+    identity :unique_slug_per_story, [:story_id, :slug]
+  end
+
   actions do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:title, :slug, :story_id]
+      accept [:motif, :slug, :story_id]
+
+      change Storybox.Stories.Changes.GenerateSceneSlug
+      change Storybox.Stories.Changes.WarnCharacterSlugCollision
     end
 
     update :update do
-      accept [:title, :slug]
+      accept [:motif, :slug]
+
+      # The collision warning runs as an after_action hook, which cannot be
+      # expressed atomically; the warning is non-fatal so this is safe.
+      require_atomic? false
+
+      change Storybox.Stories.Changes.WarnCharacterSlugCollision
     end
   end
 end

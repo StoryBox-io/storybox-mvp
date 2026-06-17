@@ -33,7 +33,7 @@ defmodule Storybox.Stories.StalenessTest do
 
     {:ok, scene} =
       Scene
-      |> Ash.Changeset.for_create(:create, %{title: "Cottage", story_id: story.id})
+      |> Ash.Changeset.for_create(:create, %{slug: "cottage", story_id: story.id})
       |> Ash.create()
 
     {:ok, script_view} =
@@ -213,7 +213,7 @@ defmodule Storybox.Stories.StalenessTest do
       # Fresh VV: a second scene with only one piece version — not stale
       {:ok, scene_b} =
         Scene
-        |> Ash.Changeset.for_create(:create, %{title: "Garden", story_id: story.id})
+        |> Ash.Changeset.for_create(:create, %{slug: "garden", story_id: story.id})
         |> Ash.create()
 
       {:ok, script_view_b} =

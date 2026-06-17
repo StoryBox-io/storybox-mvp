@@ -20,7 +20,7 @@ defmodule Storybox.Stories.ScriptViewVersionTest do
 
     {:ok, scene} =
       Storybox.Stories.Scene
-      |> Ash.Changeset.for_create(:create, %{title: "Opening Scene", story_id: story.id})
+      |> Ash.Changeset.for_create(:create, %{slug: "opening-scene", story_id: story.id})
       |> Ash.create()
 
     {:ok, script_view} =

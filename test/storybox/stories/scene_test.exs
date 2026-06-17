@@ -1,6 +1,8 @@
 defmodule Storybox.Stories.SceneTest do
   use Storybox.DataCase
 
+  import ExUnit.CaptureLog
+
   require Ash.Query
 
   setup do
@@ -21,69 +23,132 @@ defmodule Storybox.Stories.SceneTest do
     %{story: story}
   end
 
-  describe "create" do
-    test "creates a scene with required fields", %{story: story} do
-      assert {:ok, scene} =
-               Storybox.Stories.Scene
-               |> Ash.Changeset.for_create(:create, %{title: "Opening", story_id: story.id})
-               |> Ash.create()
+  defp create_scene(attrs) do
+    Storybox.Stories.Scene
+    |> Ash.Changeset.for_create(:create, attrs)
+    |> Ash.create()
+  end
 
-      assert scene.title == "Opening"
+  describe "create" do
+    test "auto-generates slug from motif when slug omitted", %{story: story} do
+      assert {:ok, scene} =
+               create_scene(%{motif: "a heated argument leads to chaos", story_id: story.id})
+
+      assert scene.motif == "a heated argument leads to chaos"
+      assert scene.slug == "a-heated-argument-leads-to-chaos"
       assert scene.story_id == story.id
-      assert is_nil(scene.slug)
     end
 
-    test "creates a scene with optional slug", %{story: story} do
+    test "explicit slug wins over motif", %{story: story} do
       assert {:ok, scene} =
-               Storybox.Stories.Scene
-               |> Ash.Changeset.for_create(:create, %{
-                 title: "Opening",
-                 slug: "opening",
+               create_scene(%{
+                 motif: "a heated argument leads to chaos",
+                 slug: "the-argument",
                  story_id: story.id
                })
-               |> Ash.create()
 
-      assert scene.slug == "opening"
+      assert scene.slug == "the-argument"
+      assert scene.motif == "a heated argument leads to chaos"
     end
 
-    test "fails without title", %{story: story} do
-      assert {:error, %Ash.Error.Invalid{}} =
-               Storybox.Stories.Scene
-               |> Ash.Changeset.for_create(:create, %{story_id: story.id})
-               |> Ash.create()
+    test "creates with explicit slug and no motif", %{story: story} do
+      assert {:ok, scene} = create_scene(%{slug: "opening", story_id: story.id})
+
+      assert scene.slug == "opening"
+      assert is_nil(scene.motif)
+    end
+
+    test "fails without slug or motif", %{story: story} do
+      assert {:error, %Ash.Error.Invalid{}} = create_scene(%{story_id: story.id})
     end
 
     test "fails without story_id" do
-      assert {:error, %Ash.Error.Invalid{}} =
-               Storybox.Stories.Scene
-               |> Ash.Changeset.for_create(:create, %{title: "Test"})
-               |> Ash.create()
+      assert {:error, %Ash.Error.Invalid{}} = create_scene(%{slug: "orphan"})
+    end
+
+    test "rejects a duplicate slug within the same story", %{story: story} do
+      assert {:ok, _} = create_scene(%{slug: "opening", story_id: story.id})
+
+      assert {:error, %Ash.Error.Invalid{}} = create_scene(%{slug: "opening", story_id: story.id})
+    end
+
+    test "allows the same slug in different stories", %{story: story} do
+      {:ok, user2} =
+        Storybox.Accounts.User
+        |> Ash.Changeset.for_create(:register_with_password, %{
+          email: "test2@example.com",
+          password: "password123!",
+          password_confirmation: "password123!"
+        })
+        |> Ash.create()
+
+      {:ok, story2} =
+        Storybox.Stories.Story
+        |> Ash.Changeset.for_create(:create, %{title: "Other Story", user_id: user2.id})
+        |> Ash.create()
+
+      assert {:ok, _} = create_scene(%{slug: "opening", story_id: story.id})
+      assert {:ok, _} = create_scene(%{slug: "opening", story_id: story2.id})
+    end
+
+    test "warns but succeeds when slug token collides with a character name", %{story: story} do
+      {:ok, _character} =
+        Storybox.Stories.Character
+        |> Ash.Changeset.for_create(:create, %{name: "Kestrel", story_id: story.id})
+        |> Ash.create()
+
+      log =
+        capture_log(fn ->
+          assert {:ok, scene} = create_scene(%{slug: "ext_ruins_kestrel", story_id: story.id})
+          assert scene.slug == "ext_ruins_kestrel"
+        end)
+
+      assert log =~ "collides with Character"
+      assert log =~ "Kestrel"
+    end
+
+    test "does not warn when no character name matches the slug", %{story: story} do
+      {:ok, _character} =
+        Storybox.Stories.Character
+        |> Ash.Changeset.for_create(:create, %{name: "Kestrel", story_id: story.id})
+        |> Ash.create()
+
+      log =
+        capture_log(fn ->
+          assert {:ok, _scene} = create_scene(%{slug: "ext_cottage_night", story_id: story.id})
+        end)
+
+      refute log =~ "collides with Character"
     end
   end
 
   describe "update" do
-    test "updates title and slug", %{story: story} do
-      {:ok, scene} =
-        Storybox.Stories.Scene
-        |> Ash.Changeset.for_create(:create, %{title: "Original", story_id: story.id})
-        |> Ash.create()
+    test "updates motif and slug", %{story: story} do
+      {:ok, scene} = create_scene(%{slug: "original", story_id: story.id})
 
       assert {:ok, updated} =
                scene
-               |> Ash.Changeset.for_update(:update, %{title: "Revised", slug: "revised"})
+               |> Ash.Changeset.for_update(:update, %{motif: "a revised motif", slug: "revised"})
                |> Ash.update()
 
-      assert updated.title == "Revised"
+      assert updated.motif == "a revised motif"
       assert updated.slug == "revised"
+    end
+
+    test "rejects updating to a slug already used in the story", %{story: story} do
+      {:ok, _first} = create_scene(%{slug: "taken", story_id: story.id})
+      {:ok, scene} = create_scene(%{slug: "free", story_id: story.id})
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               scene
+               |> Ash.Changeset.for_update(:update, %{slug: "taken"})
+               |> Ash.update()
     end
   end
 
   describe "destroy" do
     test "deletes a scene", %{story: story} do
-      {:ok, scene} =
-        Storybox.Stories.Scene
-        |> Ash.Changeset.for_create(:create, %{title: "Temp Scene", story_id: story.id})
-        |> Ash.create()
+      {:ok, scene} = create_scene(%{slug: "temp-scene", story_id: story.id})
 
       assert :ok = Ash.destroy(scene, authorize?: false)
 
@@ -96,15 +161,8 @@ defmodule Storybox.Stories.SceneTest do
 
   describe "read" do
     test "returns scenes for a story", %{story: story} do
-      {:ok, scene1} =
-        Storybox.Stories.Scene
-        |> Ash.Changeset.for_create(:create, %{title: "Scene A", story_id: story.id})
-        |> Ash.create()
-
-      {:ok, scene2} =
-        Storybox.Stories.Scene
-        |> Ash.Changeset.for_create(:create, %{title: "Scene B", story_id: story.id})
-        |> Ash.create()
+      {:ok, scene1} = create_scene(%{slug: "scene-a", story_id: story.id})
+      {:ok, scene2} = create_scene(%{slug: "scene-b", story_id: story.id})
 
       assert {:ok, scenes} = Storybox.Stories.Scene |> Ash.read()
       ids = Enum.map(scenes, & &1.id)

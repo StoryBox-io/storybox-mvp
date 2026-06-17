@@ -31,10 +31,10 @@ defmodule StoryboxWeb.ScriptViewHelpers do
     story
   end
 
-  def create_scene(story, title) do
+  def create_scene(story, label) do
     {:ok, scene} =
       Scene
-      |> Ash.Changeset.for_create(:create, %{title: title, story_id: story.id})
+      |> Ash.Changeset.for_create(:create, %{slug: Slug.slugify(label), story_id: story.id})
       |> Ash.create(authorize?: false)
 
     scene
