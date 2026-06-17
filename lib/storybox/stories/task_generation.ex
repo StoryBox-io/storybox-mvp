@@ -34,7 +34,7 @@ defmodule Storybox.Stories.TaskGeneration do
       |> Ash.read!(authorize?: false)
       |> Enum.filter(&is_nil(&1.pin_id))
 
-    Enum.each(nil_pin_segments, fn _segment ->
+    Enum.each(nil_pin_segments, fn segment ->
       Task
       |> Ash.Changeset.for_create(:create, %{
         story_id: story_id,
@@ -44,7 +44,8 @@ defmodule Storybox.Stories.TaskGeneration do
         component_id: component_id,
         target_view_id: target_view_id,
         target_view_version_id: vv_id,
-        target_view_type: Atom.to_string(vv_type)
+        target_view_type: Atom.to_string(vv_type),
+        target_scene_id: segment.scene_id
       })
       |> Ash.create(authorize?: false)
     end)

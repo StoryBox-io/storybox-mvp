@@ -77,6 +77,7 @@ defmodule Storybox.Stories.SequenceViewVersion do
           svv =
             Storybox.Stories.ScriptViewVersion
             |> Ash.Query.filter(id == ^svv_id)
+            |> Ash.Query.load(:script_view)
             |> Ash.read_one!(authorize?: false)
 
           Storybox.Stories.Segment
@@ -84,6 +85,7 @@ defmodule Storybox.Stories.SequenceViewVersion do
             view_version_id: vv.id,
             view_version_type: :sequence_vv,
             position: position,
+            scene_id: svv.script_view.scene_id,
             pin_id: svv.id,
             pin_type: :script_vv,
             pin_version_at_creation: svv.version_number
