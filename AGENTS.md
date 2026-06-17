@@ -4,6 +4,13 @@ This is a web application written using the Phoenix web framework.
 
 - **Always work on a feature branch** — never commit directly to `main`. Branch naming: `issue-<number>-<short-kebab-description>` (e.g. `issue-115-unique-version-identity`). Open a PR when the work is complete.
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
+- **Running `mix precommit` / `mix test` in the Podman dev env** — the `app` service pins `MIX_ENV=dev`, which does **not** load the test config (the `Ecto.Adapters.SQL.Sandbox` pool), so the suite must be run with the test env explicitly overridden:
+
+  ```sh
+  podman compose -f podman-compose.yml run --rm -e MIX_ENV=test app mix precommit
+  ```
+
+  Without the override the run fails during setup with `cannot invoke sandbox operation with pool DBConnection.ConnectionPool`. A suite that errors during environment/connection-pool setup is **not** green — treat the checks as passing only when the full suite runs to completion with zero failures.
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 
 ### Phoenix v1.8 guidelines
