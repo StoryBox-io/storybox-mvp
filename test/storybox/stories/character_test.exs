@@ -35,6 +35,70 @@ defmodule Storybox.Stories.CharacterTest do
       assert character.story_id == story.id
     end
 
+    test "auto-generates slug from name when slug omitted", %{story: story} do
+      assert {:ok, character} =
+               Storybox.Stories.Character
+               |> Ash.Changeset.for_create(:create, %{
+                 name: "Flame Demon",
+                 story_id: story.id
+               })
+               |> Ash.create()
+
+      assert character.slug == "flame-demon"
+    end
+
+    test "explicit slug wins over name", %{story: story} do
+      assert {:ok, character} =
+               Storybox.Stories.Character
+               |> Ash.Changeset.for_create(:create, %{
+                 name: "Flame Demon",
+                 slug: "flame_demon",
+                 story_id: story.id
+               })
+               |> Ash.create()
+
+      assert character.slug == "flame_demon"
+      assert character.name == "Flame Demon"
+    end
+
+    test "rejects a duplicate slug within the same story", %{story: story} do
+      assert {:ok, _} =
+               Storybox.Stories.Character
+               |> Ash.Changeset.for_create(:create, %{name: "Kestrel", story_id: story.id})
+               |> Ash.create()
+
+      assert {:error, %Ash.Error.Invalid{}} =
+               Storybox.Stories.Character
+               |> Ash.Changeset.for_create(:create, %{name: "Kestrel", story_id: story.id})
+               |> Ash.create()
+    end
+
+    test "allows the same slug in different stories", %{story: story} do
+      {:ok, user2} =
+        Storybox.Accounts.User
+        |> Ash.Changeset.for_create(:register_with_password, %{
+          email: "test2@example.com",
+          password: "password123!",
+          password_confirmation: "password123!"
+        })
+        |> Ash.create()
+
+      {:ok, story2} =
+        Storybox.Stories.Story
+        |> Ash.Changeset.for_create(:create, %{title: "Other Story", user_id: user2.id})
+        |> Ash.create()
+
+      assert {:ok, _} =
+               Storybox.Stories.Character
+               |> Ash.Changeset.for_create(:create, %{name: "Kestrel", story_id: story.id})
+               |> Ash.create()
+
+      assert {:ok, _} =
+               Storybox.Stories.Character
+               |> Ash.Changeset.for_create(:create, %{name: "Kestrel", story_id: story2.id})
+               |> Ash.create()
+    end
+
     test "fails without a name", %{story: story} do
       assert {:error, %Ash.Error.Invalid{}} =
                Storybox.Stories.Character
@@ -100,12 +164,28 @@ defmodule Storybox.Stories.CharacterTest do
   end
 
   describe "resource shape" do
+    test "has a slug attribute" do
+      attrs = Ash.Resource.Info.attributes(Storybox.Stories.Character)
+      names = Enum.map(attrs, & &1.name)
+      assert :slug in names
+    end
+
     test "has no essence, voice, or contradictions attribute" do
       attrs = Ash.Resource.Info.attributes(Storybox.Stories.Character)
       names = Enum.map(attrs, & &1.name)
       refute :essence in names
       refute :voice in names
       refute :contradictions in names
+    end
+
+    test "carries identity only — no descriptor or arc column" do
+      attrs = Ash.Resource.Info.attributes(Storybox.Stories.Character)
+      names = Enum.map(attrs, & &1.name)
+      refute :role in names
+      refute :archetype in names
+      refute :epithet in names
+      refute :arc in names
+      refute :through_line in names
     end
   end
 end

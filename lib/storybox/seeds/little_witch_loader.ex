@@ -219,7 +219,7 @@ defmodule Storybox.Seeds.LittleWitchLoader do
 
       char =
         Character
-        |> Ash.Changeset.for_create(:create, %{name: name, story_id: story.id})
+        |> Ash.Changeset.for_create(:create, %{name: name, slug: name_dir, story_id: story.id})
         |> Ash.create!(authorize?: false)
 
       for file <- profile_files do
