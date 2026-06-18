@@ -11,6 +11,9 @@ defmodule Storybox.Stories.World do
   attributes do
     uuid_primary_key :id
 
+    attribute :name, :string, allow_nil?: false, public?: true
+    attribute :slug, :string, allow_nil?: false, public?: true
+
     timestamps()
   end
 
@@ -20,15 +23,21 @@ defmodule Storybox.Stories.World do
     has_one :world_view, Storybox.Stories.WorldView, public?: true
   end
 
+  identities do
+    identity :unique_slug_per_story, [:story_id, :slug]
+  end
+
   actions do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:story_id]
+      accept [:name, :slug, :story_id]
+
+      change Storybox.Stories.Changes.GenerateWorldSlug
     end
 
     update :update do
-      accept []
+      accept [:name]
     end
   end
 end

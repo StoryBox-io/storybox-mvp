@@ -25,12 +25,12 @@ defmodule Storybox.Stories.WorldPieceTest do
 
     {:ok, world_a} =
       Storybox.Stories.World
-      |> Ash.Changeset.for_create(:create, %{story_id: story_a.id})
+      |> Ash.Changeset.for_create(:create, %{name: "External World", story_id: story_a.id})
       |> Ash.create()
 
     {:ok, world_b} =
       Storybox.Stories.World
-      |> Ash.Changeset.for_create(:create, %{story_id: story_b.id})
+      |> Ash.Changeset.for_create(:create, %{name: "External World", story_id: story_b.id})
       |> Ash.create()
 
     %{world_a: world_a, world_b: world_b}
