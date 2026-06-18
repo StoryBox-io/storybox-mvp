@@ -270,7 +270,7 @@ defmodule Storybox.Stories.TaskTest do
   end
 
   describe "CharacterPiece :create_version task generation" do
-    test "creates a :refinement task when a CharacterViewVersion exists pinning an older version",
+    test "creates a :review task when a CharacterViewVersion exists pinning an older version",
          %{story: story} do
       {:ok, character} =
         Storybox.Stories.Character
@@ -308,18 +308,18 @@ defmodule Storybox.Stories.TaskTest do
         })
         |> Ash.run_action(authorize?: false)
 
-      refinement_tasks =
+      review_tasks =
         tasks_triggered_by(piece2.id)
-        |> Enum.filter(&(&1.type == :refinement))
+        |> Enum.filter(&(&1.type == :review))
 
-      assert length(refinement_tasks) == 1
-      [rt] = refinement_tasks
+      assert length(review_tasks) == 1
+      [rt] = review_tasks
       assert rt.target_view_version_id == cvv.id
       assert rt.triggered_by_piece_id == piece2.id
       assert rt.status == :pending
     end
 
-    test "second create_version while first :refinement task is open creates no duplicate",
+    test "second create_version while first :review task is open creates no duplicate",
          %{story: story} do
       {:ok, character} =
         Storybox.Stories.Character
@@ -347,7 +347,7 @@ defmodule Storybox.Stories.TaskTest do
         |> Ash.ActionInput.for_action(:cut, %{character_view_id: char_view.id})
         |> Ash.run_action(authorize?: false)
 
-      # v2 creates refinement task
+      # v2 creates review task
       {:ok, _piece2} =
         Storybox.Stories.CharacterPiece
         |> Ash.ActionInput.for_action(:create_version, %{
@@ -365,21 +365,21 @@ defmodule Storybox.Stories.TaskTest do
         })
         |> Ash.run_action(authorize?: false)
 
-      open_refinements =
+      open_reviews =
         Task
         |> Ash.Query.filter(
-          type == :refinement and
+          type == :review and
             target_view_version_id == ^cvv.id and
             (status == :pending or status == :in_progress)
         )
         |> Ash.read!(authorize?: false)
 
-      assert length(open_refinements) == 1
+      assert length(open_reviews) == 1
     end
   end
 
   describe "SynopsisPiece :create_version task generation" do
-    test "creates a :refinement task for a stale SynopsisViewVersion", %{story: story} do
+    test "creates a :review task for a stale SynopsisViewVersion", %{story: story} do
       # Get the bootstrap synopsis view and its VV
       {:ok, synopsis_view} =
         SynopsisView
@@ -416,7 +416,7 @@ defmodule Storybox.Stories.TaskTest do
         |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: synopsis_view.id})
         |> Ash.run_action(authorize?: false)
 
-      # Now create v2 via create_version action — should generate refinement task
+      # Now create v2 via create_version action — should generate review task
       {:ok, piece2} =
         Storybox.Stories.SynopsisPiece
         |> Ash.ActionInput.for_action(:create_version, %{
@@ -426,9 +426,80 @@ defmodule Storybox.Stories.TaskTest do
         })
         |> Ash.run_action(authorize?: false)
 
-      refinements = tasks_triggered_by(piece2.id) |> Enum.filter(&(&1.type == :refinement))
-      assert length(refinements) >= 1
-      assert Enum.any?(refinements, &(&1.target_view_version_id == pinned_svv.id))
+      reviews = tasks_triggered_by(piece2.id) |> Enum.filter(&(&1.type == :review))
+      assert length(reviews) >= 1
+      assert Enum.any?(reviews, &(&1.target_view_version_id == pinned_svv.id))
+    end
+  end
+
+  describe "downstream piece staleness" do
+    test "emits a :refinement (not :review) task for a stale downstream SequencePiece",
+         %{story: story} do
+      {:ok, sequence} =
+        Storybox.Stories.Sequence
+        |> Ash.Changeset.for_create(:create, %{
+          story_id: story.id,
+          name: "Act One",
+          slug: "act-one"
+        })
+        |> Ash.create(authorize?: false)
+
+      {:ok, sequence_view} =
+        Storybox.Stories.SequenceView
+        |> Ash.ActionInput.for_action(:ensure_for_sequence, %{
+          sequence_id: sequence.id,
+          story_id: story.id
+        })
+        |> Ash.run_action(authorize?: false)
+
+      # Synopsis v1 is the source; derive a SequencePiece pinned to it.
+      {:ok, syn_v1} =
+        Storybox.Stories.SynopsisPiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          sequence_id: sequence.id,
+          content: "Synopsis draft 1."
+        })
+        |> Ash.run_action(authorize?: false)
+
+      {:ok, seq_piece} =
+        Storybox.Stories.SequencePiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          sequence_id: sequence.id,
+          content: "Treatment draft.",
+          source_synopsis_piece_id: syn_v1.id,
+          source_version_at_creation: syn_v1.version_number
+        })
+        |> Ash.run_action(authorize?: false)
+
+      # Synopsis v2 makes the downstream SequencePiece stale and triggers generation.
+      {:ok, _syn_v2} =
+        Storybox.Stories.SynopsisPiece
+        |> Ash.ActionInput.for_action(:create_version, %{
+          story_id: story.id,
+          sequence_id: sequence.id,
+          content: "Synopsis draft 2."
+        })
+        |> Ash.run_action(authorize?: false)
+
+      assert Storybox.Stories.Staleness.piece_stale?(seq_piece.id, :sequence_piece)
+
+      seq_view_tasks =
+        Task
+        |> Ash.Query.filter(target_view_id == ^sequence_view.id)
+        |> Ash.read!(authorize?: false)
+
+      # Downstream path emits a :refinement with nil target_view_version_id.
+      downstream =
+        Enum.filter(seq_view_tasks, fn t ->
+          t.type == :refinement and is_nil(t.target_view_version_id)
+        end)
+
+      assert length(downstream) >= 1
+
+      # Downstream piece staleness is genuine outdatedness, never a :review question.
+      refute Enum.any?(seq_view_tasks, &(&1.type == :review))
     end
   end
 

@@ -54,8 +54,10 @@ defmodule Storybox.Stories.TaskGeneration do
   end
 
   @doc """
-  Called after a Piece :create_version action. Creates :refinement tasks for
-  stale ViewVersions and downstream stale Pieces.
+  Called after a Piece :create_version action. Creates :review tasks for stale
+  ViewVersions (a pinned segment points to an older version — compatibility is
+  uncertain, so the question is re-pin or refine) and :refinement tasks for
+  downstream stale Pieces (derived from an older source, genuinely outdated).
   """
   def after_piece_version(piece, :character_piece) do
     character =
@@ -78,7 +80,7 @@ defmodule Storybox.Stories.TaskGeneration do
 
       Enum.each(cvvs, fn cvv ->
         if Staleness.view_version_stale?(cvv.id, :character_vv) do
-          maybe_create_refinement_task(
+          maybe_create_review_task(
             cvv.id,
             character_view.id,
             "character_vv",
@@ -117,7 +119,7 @@ defmodule Storybox.Stories.TaskGeneration do
 
       Enum.each(wvvs, fn wvv ->
         if Staleness.view_version_stale?(wvv.id, :world_vv) do
-          maybe_create_refinement_task(
+          maybe_create_review_task(
             wvv.id,
             world_view.id,
             "world_vv",
@@ -151,7 +153,7 @@ defmodule Storybox.Stories.TaskGeneration do
 
       Enum.each(svvs, fn svv ->
         if Staleness.view_version_stale?(svv.id, :synopsis_vv) do
-          maybe_create_refinement_task(
+          maybe_create_review_task(
             svv.id,
             synopsis_view.id,
             "synopsis_vv",
@@ -218,7 +220,7 @@ defmodule Storybox.Stories.TaskGeneration do
 
       Enum.each(tvvs, fn tvv ->
         if Staleness.view_version_stale?(tvv.id, :treatment_vv) do
-          maybe_create_refinement_task(
+          maybe_create_review_task(
             tvv.id,
             treatment_view.id,
             "treatment_vv",
@@ -301,7 +303,7 @@ defmodule Storybox.Stories.TaskGeneration do
 
       Enum.each(svvs, fn svv ->
         if Staleness.view_version_stale?(svv.id, :script_vv) do
-          maybe_create_refinement_task(
+          maybe_create_review_task(
             svv.id,
             script_view.id,
             "script_vv",
@@ -319,9 +321,11 @@ defmodule Storybox.Stories.TaskGeneration do
     :ok
   end
 
-  # Creates a :refinement task targeting a specific stale VV, deduped by
-  # target_view_version_id: at most one open refinement task per VV at a time.
-  defp maybe_create_refinement_task(
+  # Creates a :review task targeting a specific stale VV, deduped by
+  # target_view_version_id: at most one open review task per VV at a time.
+  # A stale pin may still be compatible with the new version, so the task is a
+  # question (re-pin or refine?) rather than a forced :refinement.
+  defp maybe_create_review_task(
          vv_id,
          view_id,
          view_type_str,
@@ -335,7 +339,7 @@ defmodule Storybox.Stories.TaskGeneration do
     existing =
       Task
       |> Ash.Query.filter(
-        type == :refinement and
+        type == :review and
           target_view_version_id == ^vv_id and
           (status == :pending or status == :in_progress)
       )
@@ -345,7 +349,7 @@ defmodule Storybox.Stories.TaskGeneration do
       Task
       |> Ash.Changeset.for_create(:create, %{
         story_id: story_id,
-        type: :refinement,
+        type: :review,
         status: :pending,
         component_type: component_type,
         component_id: component_id,
