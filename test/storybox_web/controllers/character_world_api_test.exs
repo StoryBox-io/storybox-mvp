@@ -91,7 +91,7 @@ defmodule StoryboxWeb.CharacterWorldApiTest do
     # world: full setup (piece + view + WVV)
     {:ok, world} =
       Storybox.Stories.World
-      |> Ash.Changeset.for_create(:create, %{story_id: story.id})
+      |> Ash.Changeset.for_create(:create, %{name: "External World", story_id: story.id})
       |> Ash.create(authorize?: false)
 
     {:ok, _wp_v1} =
@@ -115,7 +115,7 @@ defmodule StoryboxWeb.CharacterWorldApiTest do
     # world_2: WorldView only, no WVV (nil-content path)
     {:ok, world_2} =
       Storybox.Stories.World
-      |> Ash.Changeset.for_create(:create, %{story_id: story_2.id})
+      |> Ash.Changeset.for_create(:create, %{name: "External World", story_id: story_2.id})
       |> Ash.create(authorize?: false)
 
     {:ok, _world_view_2} =

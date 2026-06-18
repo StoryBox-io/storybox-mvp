@@ -20,7 +20,7 @@ defmodule Storybox.Stories.WorldViewVersionTest do
 
     {:ok, world} =
       Storybox.Stories.World
-      |> Ash.Changeset.for_create(:create, %{story_id: story.id})
+      |> Ash.Changeset.for_create(:create, %{name: "External World", story_id: story.id})
       |> Ash.create()
 
     {:ok, piece} =

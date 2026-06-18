@@ -249,7 +249,11 @@ defmodule Storybox.Seeds.LittleWitchLoader do
 
     world =
       World
-      |> Ash.Changeset.for_create(:create, %{story_id: story.id})
+      |> Ash.Changeset.for_create(:create, %{
+        story_id: story.id,
+        name: "External World",
+        slug: "external_world"
+      })
       |> Ash.create!(authorize?: false)
 
     files =
