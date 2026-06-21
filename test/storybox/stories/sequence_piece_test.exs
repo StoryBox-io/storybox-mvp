@@ -34,17 +34,7 @@ defmodule Storybox.Stories.SequencePieceTest do
       })
       |> Ash.create()
 
-    {:ok, synopsis_piece} =
-      Storybox.Stories.SynopsisPiece
-      |> Ash.Changeset.for_create(:create, %{
-        story_id: story.id,
-        sequence_id: seq1.id,
-        content_uri: Storybox.Storage.uri_for_synopsis_piece(story.id, seq1.id, 1),
-        version_number: 1
-      })
-      |> Ash.create()
-
-    %{story: story, seq1: seq1, seq2: seq2, synopsis_piece: synopsis_piece}
+    %{story: story, seq1: seq1, seq2: seq2}
   end
 
   describe "create" do
@@ -66,31 +56,6 @@ defmodule Storybox.Stories.SequencePieceTest do
       assert piece.content_uri == uri
       assert piece.version_number == 1
       assert piece.weights == %{}
-      assert is_nil(piece.source_synopsis_piece_id)
-      assert is_nil(piece.source_version_at_creation)
-    end
-
-    test "creates a sequence piece with provenance fields populated", %{
-      story: story,
-      seq1: seq1,
-      synopsis_piece: sp
-    } do
-      uri = Storybox.Storage.uri_for_sequence_piece(story.id, seq1.id, 1)
-
-      assert {:ok, piece} =
-               Storybox.Stories.SequencePiece
-               |> Ash.Changeset.for_create(:create, %{
-                 story_id: story.id,
-                 sequence_id: seq1.id,
-                 content_uri: uri,
-                 version_number: 1,
-                 source_synopsis_piece_id: sp.id,
-                 source_version_at_creation: sp.version_number
-               })
-               |> Ash.create()
-
-      assert piece.source_synopsis_piece_id == sp.id
-      assert piece.source_version_at_creation == 1
     end
 
     test "fails without story_id", %{seq1: seq1} do
@@ -148,32 +113,27 @@ defmodule Storybox.Stories.SequencePieceTest do
   end
 
   describe "create_version action" do
-    test "creates act-one v1 with version_number 1, correct URI, and provenance", %{
+    test "creates act-one v1 with version_number 1 and correct URI", %{
       story: story,
-      seq1: seq1,
-      synopsis_piece: sp
+      seq1: seq1
     } do
       assert {:ok, piece} =
                Storybox.Stories.SequencePiece
                |> Ash.ActionInput.for_action(:create_version, %{
                  story_id: story.id,
                  sequence_id: seq1.id,
-                 content: "Act one treatment.",
-                 source_synopsis_piece_id: sp.id,
-                 source_version_at_creation: sp.version_number
+                 content: "Act one treatment."
                })
                |> Ash.run_action()
 
       assert piece.version_number == 1
       assert piece.sequence_id == seq1.id
-      assert piece.source_synopsis_piece_id == sp.id
-      assert piece.source_version_at_creation == 1
 
       assert piece.content_uri ==
                Storybox.Storage.uri_for_sequence_piece(story.id, seq1.id, 1)
     end
 
-    test "creates act-one v2 without provenance — provenance fields are nil", %{
+    test "creates act-one v2 — version 2, correct URI", %{
       story: story,
       seq1: seq1
     } do
@@ -196,8 +156,6 @@ defmodule Storybox.Stories.SequencePieceTest do
                |> Ash.run_action()
 
       assert v2.version_number == 2
-      assert is_nil(v2.source_synopsis_piece_id)
-      assert is_nil(v2.source_version_at_creation)
 
       assert v2.content_uri ==
                Storybox.Storage.uri_for_sequence_piece(story.id, seq1.id, 2)
