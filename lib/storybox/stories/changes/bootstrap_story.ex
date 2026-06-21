@@ -6,7 +6,8 @@ defmodule Storybox.Stories.Changes.BootstrapStory do
     TreatmentView,
     TreatmentViewVersion,
     SynopsisView,
-    SynopsisViewVersion
+    SynopsisViewVersion,
+    StorySpine
   }
 
   # Registers an after_action hook that runs inside Ash's transaction for
@@ -18,11 +19,13 @@ defmodule Storybox.Stories.Changes.BootstrapStory do
   end
 
   defp bootstrap(_changeset, story) do
-    with {:ok, _seq} <- create_default_sequence(story.id),
+    with {:ok, seq} <- create_default_sequence(story.id),
          {:ok, tv} <- ensure_treatment_view(story.id),
          {:ok, _tvv} <- cut_treatment_view_version(tv.id),
          {:ok, sv} <- ensure_synopsis_view(story.id),
-         {:ok, _svv} <- cut_synopsis_view_version(sv.id) do
+         {:ok, _svv} <- cut_synopsis_view_version(sv.id),
+         {:ok, spine} <- ensure_story_spine(story.id),
+         {:ok, _entry} <- add_default_sequence_to_spine(spine.id, seq.id) do
       {:ok, story}
     end
   end
@@ -58,6 +61,21 @@ defmodule Storybox.Stories.Changes.BootstrapStory do
   defp cut_synopsis_view_version(synopsis_view_id) do
     SynopsisViewVersion
     |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: synopsis_view_id})
+    |> Ash.run_action(authorize?: false)
+  end
+
+  defp ensure_story_spine(story_id) do
+    StorySpine
+    |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story_id})
+    |> Ash.run_action(authorize?: false)
+  end
+
+  defp add_default_sequence_to_spine(story_spine_id, sequence_id) do
+    StorySpine
+    |> Ash.ActionInput.for_action(:add_entry, %{
+      story_spine_id: story_spine_id,
+      sequence_id: sequence_id
+    })
     |> Ash.run_action(authorize?: false)
   end
 end
