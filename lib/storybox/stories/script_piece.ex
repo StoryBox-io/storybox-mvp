@@ -17,9 +17,6 @@ defmodule Storybox.Stories.ScriptPiece do
     attribute :version_number, :integer, allow_nil?: false, public?: true
     attribute :weights, :map, default: %{}, public?: true
 
-    attribute :source_sequence_piece_id, :uuid, allow_nil?: true, public?: true
-    attribute :source_version_at_creation, :integer, allow_nil?: true, public?: true
-
     create_timestamp :inserted_at
   end
 
@@ -39,9 +36,7 @@ defmodule Storybox.Stories.ScriptPiece do
         :scene_id,
         :content_uri,
         :version_number,
-        :weights,
-        :source_sequence_piece_id,
-        :source_version_at_creation
+        :weights
       ]
     end
 
@@ -49,8 +44,6 @@ defmodule Storybox.Stories.ScriptPiece do
       constraints instance_of: Storybox.Stories.ScriptPiece
       argument :scene_id, :uuid, allow_nil?: false
       argument :content, :string, allow_nil?: false
-      argument :source_sequence_piece_id, :uuid, allow_nil?: true
-      argument :source_version_at_creation, :integer, allow_nil?: true
 
       run fn input, _context ->
         scene_id = input.arguments.scene_id
@@ -74,9 +67,7 @@ defmodule Storybox.Stories.ScriptPiece do
                |> Ash.Changeset.for_create(:create, %{
                  scene_id: scene_id,
                  content_uri: uri,
-                 version_number: next_version,
-                 source_sequence_piece_id: input.arguments[:source_sequence_piece_id],
-                 source_version_at_creation: input.arguments[:source_version_at_creation]
+                 version_number: next_version
                })
                |> Ash.create(authorize?: false) do
           Storybox.Stories.TaskGeneration.after_piece_version(piece, :script_piece)

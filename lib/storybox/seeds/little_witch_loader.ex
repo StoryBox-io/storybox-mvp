@@ -55,10 +55,10 @@ defmodule Storybox.Seeds.LittleWitchLoader do
     sequences_by_slug = create_sequences!(story, order)
 
     # Phase 2 — SynopsisPieces
-    synopsis_pieces_by_slug = create_synopsis_pieces!(story, sequences_by_slug, order)
+    create_synopsis_pieces!(story, sequences_by_slug, order)
 
     # Phase 3 — SequencePieces
-    create_sequence_pieces!(story, sequences_by_slug, synopsis_pieces_by_slug, order)
+    create_sequence_pieces!(story, sequences_by_slug, order)
 
     # Phase 4 — Characters
     create_characters!(story)
@@ -165,10 +165,9 @@ defmodule Storybox.Seeds.LittleWitchLoader do
     end
   end
 
-  defp create_sequence_pieces!(story, sequences_by_slug, synopsis_pieces_by_slug, order) do
+  defp create_sequence_pieces!(story, sequences_by_slug, order) do
     for slug <- order do
       seq = Map.fetch!(sequences_by_slug, slug)
-      synopsis_pieces = Map.fetch!(synopsis_pieces_by_slug, slug)
 
       files =
         Path.wildcard(Path.join(@base_path, "#{slug}-v*.fountain"))
@@ -176,22 +175,13 @@ defmodule Storybox.Seeds.LittleWitchLoader do
         |> Enum.sort_by(&version_from_filename/1)
 
       for file <- files do
-        n = version_from_filename(file)
-
-        source_synopsis =
-          synopsis_pieces
-          |> Enum.filter(&(&1.version_number <= n))
-          |> Enum.max_by(& &1.version_number, fn -> nil end)
-
         content = File.read!(file)
 
         SequencePiece
         |> Ash.ActionInput.for_action(:create_version, %{
           story_id: story.id,
           sequence_id: seq.id,
-          content: content,
-          source_synopsis_piece_id: source_synopsis && source_synopsis.id,
-          source_version_at_creation: source_synopsis && source_synopsis.version_number
+          content: content
         })
         |> Ash.run_action!(authorize?: false)
       end
