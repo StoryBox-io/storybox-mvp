@@ -520,6 +520,9 @@ defmodule Storybox.Seeds.LittleWitchLoader do
       seq1_id = Ecto.UUID.dump!(seq1.id)
       Storybox.Repo.delete_all(from p in "sequence_pieces", where: p.sequence_id == ^seq1_id)
       Storybox.Repo.delete_all(from s in "segments", where: s.sequence_id == ^seq1_id)
+
+      Storybox.Repo.delete_all(from e in "story_spine_entries", where: e.sequence_id == ^seq1_id)
+
       Storybox.Repo.delete_all(from s in "sequences", where: s.id == ^seq1_id)
     end
   end
