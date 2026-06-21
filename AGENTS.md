@@ -13,6 +13,14 @@ This is a web application written using the Phoenix web framework.
   Without the override the run fails during setup with `cannot invoke sandbox operation with pool DBConnection.ConnectionPool`. A suite that errors during environment/connection-pool setup is **not** green — treat the checks as passing only when the full suite runs to completion with zero failures.
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 
+### Ash & data layer
+
+This app's schema and data layer are **Ash 3 / AshPostgres 2** (`{:ash, "~> 3.0"}`, `{:ash_postgres, "~> 2.0"}`) — domain schema is defined as **Ash resources**, not raw Ecto schemas. Define attributes, relationships, actions, validations, and policies on the resource.
+
+- **Migrations and resource snapshots are generated, never hand-authored.** Change the Ash resource, then run `mix ash_postgres.generate_migrations <name>` — it derives the migration in `priv/repo/migrations/` **and** the matching `priv/resource_snapshots/repo/<table>/` snapshot together. **Never** write a migration by hand or edit a snapshot file.
+- `mix precommit` runs `ash_postgres.generate_migrations --check`; any divergence between a resource and its snapshot **fails the gate**. A schema change is green only when `--check` reports no pending migration.
+- The generic **Ecto Guidelines** below apply only where Ash exposes Ecto directly (e.g. a changeset inside an action); they do **not** describe how schema, validations, or migrations are authored here — that is all Ash.
+
 ### Phoenix v1.8 guidelines
 
 - **Always** begin your LiveView templates with `<Layouts.app flash={@flash} ...>` which wraps all inner content
