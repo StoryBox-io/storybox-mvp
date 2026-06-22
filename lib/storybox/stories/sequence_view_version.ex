@@ -39,11 +39,20 @@ defmodule Storybox.Stories.SequenceViewVersion do
     action :cut, :struct do
       constraints instance_of: Storybox.Stories.SequenceViewVersion
       argument :sequence_view_id, :uuid, allow_nil?: false
-      argument :script_view_version_ids, {:array, :uuid}, allow_nil?: false
+
+      # Explicit, order-bearing scene segments for this Sequence's inner cut.
+      # Each map carries the scene plus an optional pin:
+      #   %{"scene_id" => uuid,
+      #     "pin_id" => uuid | nil,
+      #     "pin_type" => "script_vv" | nil,
+      #     "pin_version_at_creation" => integer | nil}
+      # A map with no pin keys (or a nil pin_id) produces a deliberate nil-pin
+      # Segment. Inner scene order is the list order (Segment.position 1..N).
+      argument :segments, {:array, :map}, allow_nil?: false
 
       run fn input, _context ->
         sequence_view_id = input.arguments.sequence_view_id
-        script_view_version_ids = input.arguments.script_view_version_ids
+        segments = input.arguments.segments
 
         sequence_view =
           Storybox.Stories.SequenceView
@@ -71,25 +80,31 @@ defmodule Storybox.Stories.SequenceViewVersion do
           })
           |> Ash.create(authorize?: false)
 
-        script_view_version_ids
+        segments
         |> Enum.with_index(1)
-        |> Enum.each(fn {svv_id, position} ->
-          svv =
-            Storybox.Stories.ScriptViewVersion
-            |> Ash.Query.filter(id == ^svv_id)
-            |> Ash.Query.load(:script_view)
-            |> Ash.read_one!(authorize?: false)
-
-          Storybox.Stories.Segment
-          |> Ash.Changeset.for_create(:create, %{
+        |> Enum.each(fn {segment, position} ->
+          base = %{
             view_version_id: vv.id,
             view_version_type: :sequence_vv,
             position: position,
-            scene_id: svv.script_view.scene_id,
-            pin_id: svv.id,
-            pin_type: :script_vv,
-            pin_version_at_creation: svv.version_number
-          })
+            scene_id: Map.get(segment, "scene_id")
+          }
+
+          attrs =
+            case Map.get(segment, "pin_id") do
+              nil ->
+                base
+
+              pin_id ->
+                Map.merge(base, %{
+                  pin_id: pin_id,
+                  pin_type: Map.get(segment, "pin_type"),
+                  pin_version_at_creation: Map.get(segment, "pin_version_at_creation")
+                })
+            end
+
+          Storybox.Stories.Segment
+          |> Ash.Changeset.for_create(:create, attrs)
           |> Ash.create!(authorize?: false)
         end)
 

@@ -311,7 +311,7 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       assert html =~ "v2"
     end
 
-    test "shows the bootstrap synopsis version (v1) for a freshly created story", %{
+    test "shows no synopsis versions for a freshly created story (lazy bootstrap)", %{
       conn: conn,
       alice: alice
     } do
@@ -323,8 +323,7 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       conn = log_in_user(conn, alice)
       {:ok, _view, html} = live(conn, "/stories/#{bare_story.id}")
 
-      assert html =~ "v1"
-      refute html =~ "No synopsis versions yet."
+      assert html =~ "No synopsis versions yet."
     end
   end
 

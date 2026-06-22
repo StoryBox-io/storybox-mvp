@@ -6,8 +6,7 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
     SynopsisViewVersion,
     Segment,
     SynopsisPiece,
-    TreatmentView,
-    TreatmentViewVersion
+    StorySpine
   }
 
   require Ash.Query
@@ -27,6 +26,8 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
       |> Ash.Changeset.for_create(:create, %{title: "Little Witch", user_id: user.id})
       |> Ash.create()
 
+    # Each Sequence.create registers a StorySpine entry, so after these three the
+    # spine order is [prologue, forest, capital] (creation order).
     {:ok, seq1} =
       Storybox.Stories.Sequence
       |> Ash.Changeset.for_create(:create, %{
@@ -90,36 +91,8 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
       |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
       |> Ash.run_action()
 
-    # Fetch the bootstrap default sequence for use in order assertions
-    seq0 =
-      Storybox.Stories.Sequence
-      |> Ash.Query.filter(story_id == ^story.id and slug == "sequence-1")
-      |> Ash.read_one!(authorize?: false)
-
-    # Destroy bootstrap TVV so SVV cuts fall back to all sequences by inserted_at
-    # (the bootstrap TVV only knows about seq0; destroying it lets cut/1 discover
-    # all 4 sequences: seq0, seq1, seq2, seq3).
-    Storybox.Stories.TreatmentView
-    |> Ash.Query.filter(story_id == ^story.id)
-    |> Ash.read_one!(authorize?: false)
-    |> then(fn tv ->
-      if tv do
-        TreatmentViewVersion
-        |> Ash.Query.filter(treatment_view_id == ^tv.id)
-        |> Ash.read!(authorize?: false)
-        |> Enum.each(&Ash.destroy!(&1, authorize?: false))
-      end
-    end)
-
-    # Destroy bootstrap SVV so the first user-initiated cut creates version 1
-    SynopsisViewVersion
-    |> Ash.Query.filter(synopsis_view_id == ^synopsis_view.id)
-    |> Ash.read!(authorize?: false)
-    |> Enum.each(&Ash.destroy!(&1, authorize?: false))
-
     %{
       story: story,
-      seq0: seq0,
       seq1: seq1,
       seq2: seq2,
       seq3: seq3,
@@ -143,7 +116,7 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
       assert vv.version_number == 1
     end
 
-    test "creates exactly 4 Segments — one per Sequence (including the bootstrap default)", %{
+    test "creates exactly 3 Segments — one per Sequence on the spine", %{
       synopsis_view: synopsis_view
     } do
       {:ok, vv} =
@@ -156,7 +129,7 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
         |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == :synopsis_vv)
         |> Ash.read!(authorize?: false)
 
-      assert length(segments) == 4
+      assert length(segments) == 3
     end
 
     test "prologue Segment pins prologue-v2 (latest piece)", %{
@@ -300,62 +273,70 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
     end
   end
 
-  describe "cut order source" do
-    test "with no TreatmentViewVersion, falls back to story.sequences ordered by inserted_at",
-         %{
-           synopsis_view: synopsis_view,
-           seq0: seq0,
-           seq1: seq1,
-           seq2: seq2,
-           seq3: seq3
-         } do
-      {:ok, vv} =
-        SynopsisViewVersion
-        |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: synopsis_view.id})
+  describe "cut order" do
+    test "an empty spine produces a SynopsisViewVersion with no segments", %{story: story} do
+      {:ok, user2} =
+        Storybox.Accounts.User
+        |> Ash.Changeset.for_create(:register_with_password, %{
+          email: "empty_spine@example.com",
+          password: "password123!",
+          password_confirmation: "password123!"
+        })
+        |> Ash.create()
+
+      # A fresh Story has zero Sequences, so its bootstrap spine is empty.
+      {:ok, empty_story} =
+        Storybox.Stories.Story
+        |> Ash.Changeset.for_create(:create, %{title: "Empty", user_id: user2.id})
+        |> Ash.create()
+
+      {:ok, sv} =
+        SynopsisView
+        |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: empty_story.id})
         |> Ash.run_action()
 
-      ordered_seq_ids =
+      {:ok, vv} =
+        SynopsisViewVersion
+        |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: sv.id})
+        |> Ash.run_action()
+
+      segments =
         Segment
         |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == :synopsis_vv)
-        |> Ash.Query.sort(:position)
         |> Ash.read!(authorize?: false)
-        |> Enum.map(& &1.sequence_id)
 
-      assert ordered_seq_ids == [seq0.id, seq1.id, seq2.id, seq3.id]
+      assert segments == []
+      _ = story
     end
 
-    test "reads sequence order from latest TVV's segments (reversed natural order)", %{
+    test "reads sequence order from the live StorySpine entries in position order", %{
       story: story,
       synopsis_view: synopsis_view,
       seq1: seq1,
       seq2: seq2,
       seq3: seq3
     } do
-      {:ok, treatment_view} =
-        TreatmentView
-        |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
-        |> Ash.run_action()
+      spine =
+        StorySpine
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.read_one!(authorize?: false)
 
-      {:ok, tvv} =
-        TreatmentViewVersion
-        |> Ash.Changeset.for_create(:create, %{
-          treatment_view_id: treatment_view.id,
-          version_number: 1
-        })
-        |> Ash.create()
+      # Reorder the spine away from creation order to [capital, forest, prologue].
+      StorySpine
+      |> Ash.ActionInput.for_action(:reorder_entry, %{
+        story_spine_id: spine.id,
+        sequence_id: seq3.id,
+        new_position: 1
+      })
+      |> Ash.run_action!(authorize?: false)
 
-      # Reverse the natural order: capital, forest, prologue
-      [{seq3, 1}, {seq2, 2}, {seq1, 3}]
-      |> Enum.each(fn {seq, position} ->
-        Segment
-        |> Ash.Changeset.for_create(:create, %{
-          view_version_id: tvv.id,
-          view_version_type: :treatment_vv,
-          position: position,
-          sequence_id: seq.id
-        })
-        |> Ash.create!(authorize?: false)
-      end)
+      StorySpine
+      |> Ash.ActionInput.for_action(:reorder_entry, %{
+        story_spine_id: spine.id,
+        sequence_id: seq2.id,
+        new_position: 2
+      })
+      |> Ash.run_action!(authorize?: false)
 
       {:ok, svv} =
         SynopsisViewVersion

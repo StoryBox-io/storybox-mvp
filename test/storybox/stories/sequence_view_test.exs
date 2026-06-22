@@ -18,10 +18,14 @@ defmodule Storybox.Stories.SequenceViewTest do
       |> Ash.Changeset.for_create(:create, %{title: "Test Story", user_id: user.id})
       |> Ash.create()
 
-    sequence =
+    {:ok, sequence} =
       Storybox.Stories.Sequence
-      |> Ash.Query.filter(story_id == ^story.id)
-      |> Ash.read_one!(authorize?: false)
+      |> Ash.Changeset.for_create(:create, %{
+        name: "Sequence 1",
+        slug: "sequence-1",
+        story_id: story.id
+      })
+      |> Ash.create()
 
     %{story: story, sequence: sequence}
   end

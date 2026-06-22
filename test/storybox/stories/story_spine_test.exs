@@ -49,9 +49,7 @@ defmodule Storybox.Stories.StorySpineTest do
   end
 
   describe "bootstrap" do
-    test "story bootstrap creates a spine with the default sequence as its only entry", %{
-      story: story
-    } do
+    test "story bootstrap creates an empty spine (lazy)", %{story: story} do
       spine =
         StorySpine
         |> Ash.Query.filter(story_id == ^story.id)
@@ -59,16 +57,7 @@ defmodule Storybox.Stories.StorySpineTest do
 
       assert spine
       assert spine.story_id == story.id
-
-      default_seq =
-        Sequence
-        |> Ash.Query.filter(story_id == ^story.id)
-        |> Ash.read_one!(authorize?: false)
-
-      entries = entries_for(spine.id)
-      assert [entry] = entries
-      assert entry.sequence_id == default_seq.id
-      assert entry.position == 1
+      assert entries_for(spine.id) == []
     end
   end
 
@@ -88,26 +77,28 @@ defmodule Storybox.Stories.StorySpineTest do
   end
 
   describe "add_entry" do
-    test "inserts an entry at max_position + 1", %{story: story} do
+    test "a created Sequence is auto-registered at max_position + 1", %{story: story} do
       spine = spine_for(story.id)
-      # bootstrap already added the default sequence at position 1
-      seq = create_sequence(story.id, "seq-b")
+      seq_a = create_sequence(story.id, "seq-a")
+      seq_b = create_sequence(story.id, "seq-b")
 
-      {:ok, entry} =
-        StorySpine
-        |> Ash.ActionInput.for_action(:add_entry, %{
-          story_spine_id: spine.id,
-          sequence_id: seq.id
-        })
-        |> Ash.run_action()
-
-      assert entry.sequence_id == seq.id
-      assert entry.position == 2
+      entries = entries_for(spine.id)
+      assert Enum.map(entries, & &1.sequence_id) == [seq_a.id, seq_b.id]
+      assert Enum.map(entries, & &1.position) == [1, 2]
     end
 
     test "accepts an explicit position", %{story: story} do
       spine = spine_for(story.id)
       seq = create_sequence(story.id, "seq-b")
+
+      # Drop the auto-registered entry so we can re-add it at an explicit position.
+      {:ok, _} =
+        StorySpine
+        |> Ash.ActionInput.for_action(:remove_entry, %{
+          story_spine_id: spine.id,
+          sequence_id: seq.id
+        })
+        |> Ash.run_action()
 
       {:ok, entry} =
         StorySpine
@@ -123,17 +114,14 @@ defmodule Storybox.Stories.StorySpineTest do
 
     test "rejects a duplicate sequence on the same spine", %{story: story} do
       spine = spine_for(story.id)
-
-      default_entry =
-        StorySpineEntry
-        |> Ash.Query.filter(story_spine_id == ^spine.id)
-        |> Ash.read_one!(authorize?: false)
+      # Auto-registered on create — adding it again must be rejected.
+      seq = create_sequence(story.id, "seq-b")
 
       assert {:error, _} =
                StorySpine
                |> Ash.ActionInput.for_action(:add_entry, %{
                  story_spine_id: spine.id,
-                 sequence_id: default_entry.sequence_id
+                 sequence_id: seq.id
                })
                |> Ash.run_action()
     end
@@ -142,13 +130,11 @@ defmodule Storybox.Stories.StorySpineTest do
   describe "remove_entry" do
     test "deletes the entry and repacks remaining positions to 1..n", %{story: story} do
       spine = spine_for(story.id)
+      seq_a = create_sequence(story.id, "seq-a")
       seq_b = create_sequence(story.id, "seq-b")
       seq_c = create_sequence(story.id, "seq-c")
 
-      add(spine.id, seq_b.id)
-      add(spine.id, seq_c.id)
-
-      # spine now: [default(1), seq_b(2), seq_c(3)] — remove the middle one
+      # spine: [seq_a(1), seq_b(2), seq_c(3)] — remove the middle one
       {:ok, _} =
         StorySpine
         |> Ash.ActionInput.for_action(:remove_entry, %{
@@ -161,27 +147,18 @@ defmodule Storybox.Stories.StorySpineTest do
       assert length(entries) == 2
       assert Enum.map(entries, & &1.position) == [1, 2]
       refute Enum.any?(entries, &(&1.sequence_id == seq_b.id))
-      assert List.last(entries).sequence_id == seq_c.id
+      assert Enum.map(entries, & &1.sequence_id) == [seq_a.id, seq_c.id]
     end
   end
 
   describe "reorder_entry" do
     test "moves the entry and shifts others without gaps", %{story: story} do
       spine = spine_for(story.id)
+      seq_a = create_sequence(story.id, "seq-a")
       seq_b = create_sequence(story.id, "seq-b")
       seq_c = create_sequence(story.id, "seq-c")
 
-      default_entry =
-        StorySpineEntry
-        |> Ash.Query.filter(story_spine_id == ^spine.id)
-        |> Ash.read_one!(authorize?: false)
-
-      default_seq_id = default_entry.sequence_id
-
-      add(spine.id, seq_b.id)
-      add(spine.id, seq_c.id)
-
-      # [default(1), seq_b(2), seq_c(3)] — move seq_c to position 1
+      # [seq_a(1), seq_b(2), seq_c(3)] — move seq_c to position 1
       {:ok, _} =
         StorySpine
         |> Ash.ActionInput.for_action(:reorder_entry, %{
@@ -195,18 +172,8 @@ defmodule Storybox.Stories.StorySpineTest do
         entries_for(spine.id)
         |> Enum.map(& &1.sequence_id)
 
-      assert ordered == [seq_c.id, default_seq_id, seq_b.id]
+      assert ordered == [seq_c.id, seq_a.id, seq_b.id]
       assert Enum.map(entries_for(spine.id), & &1.position) == [1, 2, 3]
     end
-  end
-
-  defp add(spine_id, sequence_id) do
-    {:ok, _} =
-      StorySpine
-      |> Ash.ActionInput.for_action(:add_entry, %{
-        story_spine_id: spine_id,
-        sequence_id: sequence_id
-      })
-      |> Ash.run_action()
   end
 end

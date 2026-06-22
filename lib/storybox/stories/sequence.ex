@@ -31,10 +31,37 @@ defmodule Storybox.Stories.Sequence do
 
     create :create do
       accept [:story_id, :name, :slug]
+
+      # A Sequence materializes its place in the running order: register it on
+      # the Story's StorySpine (created if absent) as the next entry. Runs inside
+      # Story-create's transaction, so a failure rolls the Sequence back with it.
+      change fn changeset, _context ->
+        Ash.Changeset.after_action(changeset, fn _changeset, sequence ->
+          with {:ok, spine} <- ensure_spine(sequence.story_id),
+               {:ok, _entry} <- add_spine_entry(spine.id, sequence.id) do
+            {:ok, sequence}
+          end
+        end)
+      end
     end
 
     update :update do
       accept [:name]
     end
+  end
+
+  defp ensure_spine(story_id) do
+    Storybox.Stories.StorySpine
+    |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story_id})
+    |> Ash.run_action(authorize?: false)
+  end
+
+  defp add_spine_entry(story_spine_id, sequence_id) do
+    Storybox.Stories.StorySpine
+    |> Ash.ActionInput.for_action(:add_entry, %{
+      story_spine_id: story_spine_id,
+      sequence_id: sequence_id
+    })
+    |> Ash.run_action(authorize?: false)
   end
 end

@@ -169,6 +169,33 @@ defmodule Storybox.Stories.StorySpine do
     end
   end
 
+  @doc """
+  Returns the Story's live sequence order as a list of `sequence_id`s, read from
+  the StorySpine entries in `position` order. Returns `[]` when the Story has no
+  spine yet or the spine is empty.
+
+  This is the single source of outer-layer order: the synopsis, treatment, and
+  story-script cuts read it to produce order-free, sequence-keyed segments.
+  """
+  def sequence_ids_in_order(story_id) do
+    spine =
+      Storybox.Stories.StorySpine
+      |> Ash.Query.filter(story_id == ^story_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case spine do
+      nil ->
+        []
+
+      spine ->
+        Storybox.Stories.StorySpineEntry
+        |> Ash.Query.filter(story_spine_id == ^spine.id)
+        |> Ash.Query.sort(:position)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(& &1.sequence_id)
+    end
+  end
+
   # Rewrites the positions of the given entries (already in desired order) to a
   # dense 1..n sequence. To avoid transiently violating the unique
   # (story_spine_id, position) index, all entries are first parked at negative

@@ -116,8 +116,7 @@ defmodule StoryboxWeb.ScriptViewHelpers do
       StoryScriptViewVersion
       |> Ash.Changeset.for_create(:create, %{
         story_script_view_id: story_script_view.id,
-        version_number: version_number,
-        source_treatment_view_version_id: Ash.UUID.generate()
+        version_number: version_number
       })
       |> Ash.create(authorize?: false)
 

@@ -2,11 +2,8 @@ defmodule Storybox.Stories.Changes.BootstrapStory do
   use Ash.Resource.Change
 
   alias Storybox.Stories.{
-    Sequence,
     TreatmentView,
-    TreatmentViewVersion,
     SynopsisView,
-    SynopsisViewVersion,
     StorySpine
   }
 
@@ -18,37 +15,22 @@ defmodule Storybox.Stories.Changes.BootstrapStory do
     Ash.Changeset.after_action(changeset, &bootstrap/2)
   end
 
+  # Lazy bootstrap: a new Story starts with zero Sequences and no eager layer
+  # cuts. We only ensure the Story-wide skeleton — TreatmentView, SynopsisView,
+  # and an (empty) StorySpine. The first Sequence created at any layer
+  # materializes its own spine entry (see Sequence.:create), and layer cuts read
+  # the live spine order on demand.
   defp bootstrap(_changeset, story) do
-    with {:ok, seq} <- create_default_sequence(story.id),
-         {:ok, tv} <- ensure_treatment_view(story.id),
-         {:ok, _tvv} <- cut_treatment_view_version(tv.id),
-         {:ok, sv} <- ensure_synopsis_view(story.id),
-         {:ok, _svv} <- cut_synopsis_view_version(sv.id),
-         {:ok, spine} <- ensure_story_spine(story.id),
-         {:ok, _entry} <- add_default_sequence_to_spine(spine.id, seq.id) do
+    with {:ok, _tv} <- ensure_treatment_view(story.id),
+         {:ok, _sv} <- ensure_synopsis_view(story.id),
+         {:ok, _spine} <- ensure_story_spine(story.id) do
       {:ok, story}
     end
-  end
-
-  defp create_default_sequence(story_id) do
-    Sequence
-    |> Ash.Changeset.for_create(:create, %{
-      story_id: story_id,
-      name: "Sequence 1",
-      slug: "sequence-1"
-    })
-    |> Ash.create(authorize?: false)
   end
 
   defp ensure_treatment_view(story_id) do
     TreatmentView
     |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story_id})
-    |> Ash.run_action(authorize?: false)
-  end
-
-  defp cut_treatment_view_version(treatment_view_id) do
-    TreatmentViewVersion
-    |> Ash.ActionInput.for_action(:cut, %{treatment_view_id: treatment_view_id})
     |> Ash.run_action(authorize?: false)
   end
 
@@ -58,24 +40,9 @@ defmodule Storybox.Stories.Changes.BootstrapStory do
     |> Ash.run_action(authorize?: false)
   end
 
-  defp cut_synopsis_view_version(synopsis_view_id) do
-    SynopsisViewVersion
-    |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: synopsis_view_id})
-    |> Ash.run_action(authorize?: false)
-  end
-
   defp ensure_story_spine(story_id) do
     StorySpine
     |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story_id})
-    |> Ash.run_action(authorize?: false)
-  end
-
-  defp add_default_sequence_to_spine(story_spine_id, sequence_id) do
-    StorySpine
-    |> Ash.ActionInput.for_action(:add_entry, %{
-      story_spine_id: story_spine_id,
-      sequence_id: sequence_id
-    })
     |> Ash.run_action(authorize?: false)
   end
 end

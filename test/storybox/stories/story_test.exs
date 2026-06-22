@@ -44,9 +44,7 @@ defmodule Storybox.Stories.StoryTest do
   end
 
   describe "bootstrap" do
-    test "creates 1 default Sequence, 1 TreatmentView + TVV v1, 1 SynopsisView + SVV v1", %{
-      user: user
-    } do
+    test "creates no Sequences and no layer ViewVersions (lazy bootstrap)", %{user: user} do
       assert {:ok, story} =
                Storybox.Stories.Story
                |> Ash.Changeset.for_create(:create, %{title: "Bootstrap Test", user_id: user.id})
@@ -57,10 +55,38 @@ defmodule Storybox.Stories.StoryTest do
         |> Ash.Query.filter(story_id == ^story.id)
         |> Ash.read!(authorize?: false)
 
-      assert length(sequences) == 1
-      [default_seq] = sequences
-      assert default_seq.name == "Sequence 1"
-      assert default_seq.slug == "sequence-1"
+      assert sequences == []
+
+      {:ok, treatment_view} =
+        Storybox.Stories.TreatmentView
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.read_one(authorize?: false)
+
+      tvvs =
+        Storybox.Stories.TreatmentViewVersion
+        |> Ash.Query.filter(treatment_view_id == ^treatment_view.id)
+        |> Ash.read!(authorize?: false)
+
+      assert tvvs == []
+
+      {:ok, synopsis_view} =
+        Storybox.Stories.SynopsisView
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.read_one(authorize?: false)
+
+      svvs =
+        Storybox.Stories.SynopsisViewVersion
+        |> Ash.Query.filter(synopsis_view_id == ^synopsis_view.id)
+        |> Ash.read!(authorize?: false)
+
+      assert svvs == []
+    end
+
+    test "creates a TreatmentView, a SynopsisView, and an empty StorySpine", %{user: user} do
+      assert {:ok, story} =
+               Storybox.Stories.Story
+               |> Ash.Changeset.for_create(:create, %{title: "Skeleton Test", user_id: user.id})
+               |> Ash.create()
 
       {:ok, treatment_view} =
         Storybox.Stories.TreatmentView
@@ -69,26 +95,6 @@ defmodule Storybox.Stories.StoryTest do
 
       assert treatment_view != nil
 
-      tvvs =
-        Storybox.Stories.TreatmentViewVersion
-        |> Ash.Query.filter(treatment_view_id == ^treatment_view.id)
-        |> Ash.read!(authorize?: false)
-
-      assert length(tvvs) == 1
-      [tvv] = tvvs
-      assert tvv.version_number == 1
-
-      tvv_segments =
-        Storybox.Stories.Segment
-        |> Ash.Query.filter(view_version_id == ^tvv.id and view_version_type == :treatment_vv)
-        |> Ash.read!(authorize?: false)
-
-      assert length(tvv_segments) == 1
-      [tvv_seg] = tvv_segments
-      assert tvv_seg.pin_id == nil
-      assert tvv_seg.pin_type == nil
-      assert tvv_seg.sequence_id == default_seq.id
-
       {:ok, synopsis_view} =
         Storybox.Stories.SynopsisView
         |> Ash.Query.filter(story_id == ^story.id)
@@ -96,25 +102,19 @@ defmodule Storybox.Stories.StoryTest do
 
       assert synopsis_view != nil
 
-      svvs =
-        Storybox.Stories.SynopsisViewVersion
-        |> Ash.Query.filter(synopsis_view_id == ^synopsis_view.id)
+      {:ok, spine} =
+        Storybox.Stories.StorySpine
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.read_one(authorize?: false)
+
+      assert spine != nil
+
+      entries =
+        Storybox.Stories.StorySpineEntry
+        |> Ash.Query.filter(story_spine_id == ^spine.id)
         |> Ash.read!(authorize?: false)
 
-      assert length(svvs) == 1
-      [svv] = svvs
-      assert svv.version_number == 1
-
-      svv_segments =
-        Storybox.Stories.Segment
-        |> Ash.Query.filter(view_version_id == ^svv.id and view_version_type == :synopsis_vv)
-        |> Ash.read!(authorize?: false)
-
-      assert length(svv_segments) == 1
-      [svv_seg] = svv_segments
-      assert svv_seg.pin_id == nil
-      assert svv_seg.pin_type == nil
-      assert svv_seg.sequence_id == default_seq.id
+      assert entries == []
     end
 
     # Rollback on mid-bootstrap failure is guaranteed by Ash's after_action semantics:

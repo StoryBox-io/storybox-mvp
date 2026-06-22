@@ -42,6 +42,13 @@ defmodule Storybox.Stories.TreatmentViewVersion do
       constraints instance_of: Storybox.Stories.TreatmentViewVersion
       argument :treatment_view_id, :uuid, allow_nil?: false
 
+      # Optional explicit segment list. When supplied, these exact, order-free
+      # segments are written (each map: %{"sequence_id" => uuid, "pin_id" =>
+      # uuid | nil, "pin_type" => string | nil, "pin_version_at_creation" =>
+      # integer | nil}). When absent, segments are derived from the live
+      # StorySpine order, pinning each Sequence's latest SequencePiece.
+      argument :segments, {:array, :map}, allow_nil?: true, default: nil
+
       run fn input, _context ->
         treatment_view_id = input.arguments.treatment_view_id
 
@@ -53,27 +60,8 @@ defmodule Storybox.Stories.TreatmentViewVersion do
 
         story_id = treatment_view.story_id
 
-        prior_vv =
-          treatment_view.treatment_view_versions
-          |> Enum.sort_by(& &1.version_number, :desc)
-          |> List.first()
-
-        sequence_ids =
-          if prior_vv do
-            Storybox.Stories.Segment
-            |> Ash.Query.filter(
-              view_version_id == ^prior_vv.id and view_version_type == :treatment_vv
-            )
-            |> Ash.Query.sort(:position)
-            |> Ash.read!(authorize?: false)
-            |> Enum.map(& &1.sequence_id)
-          else
-            Storybox.Stories.Sequence
-            |> Ash.Query.filter(story_id == ^story_id)
-            |> Ash.Query.sort(:inserted_at)
-            |> Ash.read!(authorize?: false)
-            |> Enum.map(& &1.id)
-          end
+        segments =
+          Map.get(input.arguments, :segments) || derive_segments_from_spine(story_id)
 
         next_version =
           treatment_view.treatment_view_versions
@@ -89,37 +77,31 @@ defmodule Storybox.Stories.TreatmentViewVersion do
           })
           |> Ash.create!(authorize?: false)
 
-        sequence_ids
+        segments
         |> Enum.with_index(1)
-        |> Enum.each(fn {seq_id, position} ->
-          latest_piece =
-            Storybox.Stories.SequencePiece
-            |> Ash.Query.filter(sequence_id == ^seq_id)
-            |> Ash.read!(authorize?: false)
-            |> Enum.max_by(& &1.version_number, fn -> nil end)
+        |> Enum.each(fn {segment, position} ->
+          base = %{
+            view_version_id: vv.id,
+            view_version_type: :treatment_vv,
+            position: position,
+            sequence_id: Map.get(segment, "sequence_id")
+          }
 
-          segment_attrs =
-            if latest_piece do
-              %{
-                view_version_id: vv.id,
-                view_version_type: :treatment_vv,
-                position: position,
-                sequence_id: seq_id,
-                pin_id: latest_piece.id,
-                pin_type: :sequence_piece,
-                pin_version_at_creation: latest_piece.version_number
-              }
-            else
-              %{
-                view_version_id: vv.id,
-                view_version_type: :treatment_vv,
-                position: position,
-                sequence_id: seq_id
-              }
+          attrs =
+            case Map.get(segment, "pin_id") do
+              nil ->
+                base
+
+              pin_id ->
+                Map.merge(base, %{
+                  pin_id: pin_id,
+                  pin_type: Map.get(segment, "pin_type"),
+                  pin_version_at_creation: Map.get(segment, "pin_version_at_creation")
+                })
             end
 
           Storybox.Stories.Segment
-          |> Ash.Changeset.for_create(:create, segment_attrs)
+          |> Ash.Changeset.for_create(:create, attrs)
           |> Ash.create!(authorize?: false)
         end)
 
@@ -135,5 +117,32 @@ defmodule Storybox.Stories.TreatmentViewVersion do
         {:ok, vv}
       end
     end
+  end
+
+  # Derives order-free segments from the live StorySpine: one per spine entry in
+  # position order, pinning that Sequence's latest SequencePiece (a nil-pin
+  # segment when the Sequence has no piece yet). An empty spine yields no
+  # segments.
+  defp derive_segments_from_spine(story_id) do
+    story_id
+    |> Storybox.Stories.StorySpine.sequence_ids_in_order()
+    |> Enum.map(fn seq_id ->
+      latest_piece =
+        Storybox.Stories.SequencePiece
+        |> Ash.Query.filter(sequence_id == ^seq_id)
+        |> Ash.read!(authorize?: false)
+        |> Enum.max_by(& &1.version_number, fn -> nil end)
+
+      if latest_piece do
+        %{
+          "sequence_id" => seq_id,
+          "pin_id" => latest_piece.id,
+          "pin_type" => :sequence_piece,
+          "pin_version_at_creation" => latest_piece.version_number
+        }
+      else
+        %{"sequence_id" => seq_id}
+      end
+    end)
   end
 end
