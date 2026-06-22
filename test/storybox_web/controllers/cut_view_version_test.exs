@@ -5,12 +5,13 @@ defmodule StoryboxWeb.CutViewVersionTest do
 
   require Ash.Query
 
-  # Bootstrap (BootstrapStory) runs on Story.create and creates:
-  #   Sequence 1, TreatmentView + TVV v1 (nil-pin seg), SynopsisView + SVV v1 (nil-pin seg).
+  # Lazy bootstrap (BootstrapStory) creates only TreatmentView, SynopsisView, and
+  # an empty StorySpine — no Sequences and no layer VVs.
   #
-  # Setup adds on top of that:
-  #   StoryScriptView (not bootstrapped)
-  #   SequenceView for the bootstrap sequence (not bootstrapped)
+  # Setup builds on top of that:
+  #   one Sequence (registers a StorySpine entry on create)
+  #   StoryScriptView
+  #   SequenceView for that Sequence
   #   Scene + ScriptView + ScriptPiece v1
   #
   # other_story exists only for 403/404 cross-story tests.
@@ -39,16 +40,25 @@ defmodule StoryboxWeb.CutViewVersionTest do
     {:ok, raw_token, _} = ApiToken.generate(%{story_id: story.id, user_id: user.id})
     {:ok, raw_token_other, _} = ApiToken.generate(%{story_id: other_story.id, user_id: user.id})
 
-    # Bootstrap created "Sequence 1" — query it
-    sequence =
+    # Lazy bootstrap creates no Sequence — make one per story (each registers a
+    # StorySpine entry on create).
+    {:ok, sequence} =
       Storybox.Stories.Sequence
-      |> Ash.Query.filter(story_id == ^story.id)
-      |> Ash.read_one!(authorize?: false)
+      |> Ash.Changeset.for_create(:create, %{
+        story_id: story.id,
+        name: "Sequence 1",
+        slug: "sequence-1"
+      })
+      |> Ash.create(authorize?: false)
 
-    other_sequence =
+    {:ok, other_sequence} =
       Storybox.Stories.Sequence
-      |> Ash.Query.filter(story_id == ^other_story.id)
-      |> Ash.read_one!(authorize?: false)
+      |> Ash.Changeset.for_create(:create, %{
+        story_id: other_story.id,
+        name: "Sequence 1",
+        slug: "sequence-1"
+      })
+      |> Ash.create(authorize?: false)
 
     # StoryScriptView is not bootstrapped — create it for the story_script cut test
     {:ok, _story_script_view} =
@@ -95,7 +105,7 @@ defmodule StoryboxWeb.CutViewVersionTest do
   end
 
   describe "POST /api/stories/:story_id/views/synopsis/cut" do
-    test "201 with id, version_number 2, and unresolvable_segments for nil-pin sequences", %{
+    test "201 with id, version_number 1, and unresolvable_segments for nil-pin sequences", %{
       conn: conn,
       story: story,
       raw_token: token
@@ -107,9 +117,9 @@ defmodule StoryboxWeb.CutViewVersionTest do
 
       body = json_response(conn, 201)
       assert body["id"]
-      # bootstrap created v1; this cut creates v2
-      assert body["version_number"] == 2
-      # bootstrap sequence has no SynopsisPiece → one unresolvable segment
+      # lazy bootstrap cuts no SVV; this is the first cut → v1
+      assert body["version_number"] == 1
+      # the setup sequence has no SynopsisPiece → one unresolvable segment
       assert length(body["unresolvable_segments"]) == 1
       [seg] = body["unresolvable_segments"]
       assert seg["position"] == 1
@@ -135,7 +145,7 @@ defmodule StoryboxWeb.CutViewVersionTest do
   end
 
   describe "POST /api/stories/:story_id/views/treatment/cut" do
-    test "201 with version_number 2 (bootstrap created v1)", %{
+    test "201 with version_number 1 (first TreatmentVV cut)", %{
       conn: conn,
       story: story,
       raw_token: token
@@ -147,7 +157,7 @@ defmodule StoryboxWeb.CutViewVersionTest do
 
       body = json_response(conn, 201)
       assert body["id"]
-      assert body["version_number"] == 2
+      assert body["version_number"] == 1
       assert is_list(body["unresolvable_segments"])
     end
 

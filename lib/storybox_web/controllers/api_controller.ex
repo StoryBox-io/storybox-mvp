@@ -661,7 +661,7 @@ defmodule StoryboxWeb.ApiController do
                Storybox.Stories.SequenceViewVersion
                |> Ash.ActionInput.for_action(:cut, %{
                  sequence_view_id: view.id,
-                 script_view_version_ids: script_view_version_ids
+                 segments: sequence_segments_from_svv_ids(script_view_version_ids)
                })
                |> Ash.run_action(authorize?: false) do
           conn |> put_status(201) |> json(format_cut_vv(vv, :sequence_vv))
@@ -669,6 +669,26 @@ defmodule StoryboxWeb.ApiController do
           {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
         end
     end
+  end
+
+  # Translates the API's ScriptViewVersion-id list into the explicit, scene-keyed
+  # segment maps SequenceViewVersion.:cut now expects, resolving each VV's scene
+  # and pinning it. List order becomes inner scene order.
+  defp sequence_segments_from_svv_ids(script_view_version_ids) do
+    Enum.map(script_view_version_ids, fn svv_id ->
+      svv =
+        Storybox.Stories.ScriptViewVersion
+        |> Ash.Query.filter(id == ^svv_id)
+        |> Ash.Query.load(:script_view)
+        |> Ash.read_one!(authorize?: false)
+
+      %{
+        "scene_id" => svv.script_view.scene_id,
+        "pin_id" => svv.id,
+        "pin_type" => "script_vv",
+        "pin_version_at_creation" => svv.version_number
+      }
+    end)
   end
 
   def cut_script_vv(conn, %{"scene_id" => scene_id} = params) do

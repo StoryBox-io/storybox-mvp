@@ -10,7 +10,6 @@ defmodule Storybox.Seeds.LittleWitchLoader do
     ScriptPiece,
     ScriptView,
     ScriptViewVersion,
-    Segment,
     Sequence,
     SequencePiece,
     SequenceView,
@@ -47,11 +46,8 @@ defmodule Storybox.Seeds.LittleWitchLoader do
   defp do_seed!(story) do
     order = read_json("sequence_order.json")["order"]
 
-    # Remove bootstrap-created sequence-1 and stale VV cuts before seeding,
-    # so Phase 7/8 cut fresh V1s that discover all 7 sequences with their Pieces.
-    cleanup_bootstrap_artifacts!(story)
-
-    # Phase 1 — Sequences
+    # Phase 1 — Sequences (each registers its own StorySpine entry on create, in
+    # `order`, so the later layer cuts read the right live order off the spine).
     sequences_by_slug = create_sequences!(story, order)
 
     # Phase 2 — SynopsisPieces
@@ -368,163 +364,35 @@ defmodule Storybox.Seeds.LittleWitchLoader do
         |> Ash.run_action(authorize?: false)
 
       cuts = read_json("sequence_views/#{slug}_cuts.json")
-      segments = cuts["segments"]
 
-      cond do
-        segments == [] ->
-          SequenceViewVersion
-          |> Ash.ActionInput.for_action(:cut, %{
-            sequence_view_id: sv.id,
-            script_view_version_ids: []
-          })
-          |> Ash.run_action!(authorize?: false)
+      seg_maps =
+        Enum.map(cuts["segments"], fn seg ->
+          scene = Map.fetch!(scene_map, seg["scene"])
 
-        Enum.all?(segments, &(not is_nil(&1["pin"]))) ->
-          svv_ids =
-            Enum.map(segments, fn seg ->
-              scene_slug = scene_slug_from_pin(seg["pin"])
-              Map.fetch!(script_vv_map, scene_slug).id
-            end)
+          if is_nil(seg["pin"]) do
+            %{"scene_id" => scene.id}
+          else
+            svv = Map.fetch!(script_vv_map, scene_slug_from_pin(seg["pin"]))
 
-          SequenceViewVersion
-          |> Ash.ActionInput.for_action(:cut, %{
-            sequence_view_id: sv.id,
-            script_view_version_ids: svv_ids
-          })
-          |> Ash.run_action!(authorize?: false)
+            %{
+              "scene_id" => scene.id,
+              "pin_id" => svv.id,
+              "pin_type" => "script_vv",
+              "pin_version_at_creation" => svv.version_number
+            }
+          end
+        end)
 
-        true ->
-          bypass_cut!(story, sv, segments, script_vv_map, scene_map)
-      end
+      SequenceViewVersion
+      |> Ash.ActionInput.for_action(:cut, %{sequence_view_id: sv.id, segments: seg_maps})
+      |> Ash.run_action!(authorize?: false)
     end
-  end
-
-  defp bypass_cut!(story, sv, segments, script_vv_map, scene_map) do
-    existing_vvs =
-      SequenceViewVersion
-      |> Ash.Query.filter(sequence_view_id == ^sv.id)
-      |> Ash.read!(authorize?: false)
-
-    next_vn =
-      existing_vvs
-      |> Enum.map(& &1.version_number)
-      |> Enum.max(fn -> 0 end)
-      |> Kernel.+(1)
-
-    vv =
-      SequenceViewVersion
-      |> Ash.Changeset.for_create(:create, %{
-        sequence_view_id: sv.id,
-        version_number: next_vn
-      })
-      |> Ash.create!(authorize?: false)
-
-    segments
-    |> Enum.with_index(1)
-    |> Enum.each(fn {seg, position} ->
-      if is_nil(seg["pin"]) do
-        Segment
-        |> Ash.Changeset.for_create(:create, %{
-          view_version_id: vv.id,
-          view_version_type: :sequence_vv,
-          position: position,
-          scene_id: Map.fetch!(scene_map, seg["scene"]).id
-        })
-        |> Ash.create!(authorize?: false)
-      else
-        scene_slug = scene_slug_from_pin(seg["pin"])
-        svv = Map.fetch!(script_vv_map, scene_slug)
-
-        Segment
-        |> Ash.Changeset.for_create(:create, %{
-          view_version_id: vv.id,
-          view_version_type: :sequence_vv,
-          position: position,
-          scene_id: Map.fetch!(scene_map, scene_slug).id,
-          pin_id: svv.id,
-          pin_type: :script_vv,
-          pin_version_at_creation: svv.version_number
-        })
-        |> Ash.create!(authorize?: false)
-      end
-    end)
-
-    Storybox.Stories.TaskGeneration.after_cut(
-      vv.id,
-      :sequence_vv,
-      sv.id,
-      :story,
-      story.id,
-      story.id
-    )
   end
 
   defp read_json(rel_path) do
     Path.join(@base_path, rel_path)
     |> File.read!()
     |> Jason.decode!()
-  end
-
-  defp cleanup_bootstrap_artifacts!(story) do
-    import Ecto.Query
-
-    story_id = Ecto.UUID.dump!(story.id)
-
-    # Remove all tasks — bootstrap cuts created spurious :creation tasks that
-    # can never be resolved by the seed (sequence-1 will be deleted below).
-    Storybox.Repo.delete_all(from t in "tasks", where: t.story_id == ^story_id)
-
-    # Delete TreatmentVV V1 (and its segments) so Phase 7 cuts a fresh V1 that
-    # discovers all 7 seeded sequences once their SequencePieces exist.
-    treatment_view =
-      TreatmentView
-      |> Ash.Query.filter(story_id == ^story.id)
-      |> Ash.read_one!(authorize?: false)
-
-    if treatment_view do
-      tvv_ids =
-        TreatmentViewVersion
-        |> Ash.Query.filter(treatment_view_id == ^treatment_view.id)
-        |> Ash.read!(authorize?: false)
-        |> Enum.map(&Ecto.UUID.dump!(&1.id))
-
-      Storybox.Repo.delete_all(from s in "segments", where: s.view_version_id in ^tvv_ids)
-      Storybox.Repo.delete_all(from v in "treatment_view_versions", where: v.id in ^tvv_ids)
-    end
-
-    # Same for SynopsisVV V1.
-    synopsis_view =
-      SynopsisView
-      |> Ash.Query.filter(story_id == ^story.id)
-      |> Ash.read_one!(authorize?: false)
-
-    if synopsis_view do
-      svv_ids =
-        SynopsisViewVersion
-        |> Ash.Query.filter(synopsis_view_id == ^synopsis_view.id)
-        |> Ash.read!(authorize?: false)
-        |> Enum.map(&Ecto.UUID.dump!(&1.id))
-
-      Storybox.Repo.delete_all(from s in "segments", where: s.view_version_id in ^svv_ids)
-      Storybox.Repo.delete_all(from v in "synopsis_view_versions", where: v.id in ^svv_ids)
-    end
-
-    # Delete sequence-1 (BootstrapStory default). Its SequencePieces and Segments
-    # must be removed first to satisfy FK constraints.
-    seq1 =
-      Sequence
-      |> Ash.Query.filter(story_id == ^story.id and slug == "sequence-1")
-      |> Ash.read_one!(authorize?: false)
-
-    if seq1 do
-      seq1_id = Ecto.UUID.dump!(seq1.id)
-      Storybox.Repo.delete_all(from p in "sequence_pieces", where: p.sequence_id == ^seq1_id)
-      Storybox.Repo.delete_all(from s in "segments", where: s.sequence_id == ^seq1_id)
-
-      Storybox.Repo.delete_all(from e in "story_spine_entries", where: e.sequence_id == ^seq1_id)
-
-      Storybox.Repo.delete_all(from s in "sequences", where: s.id == ^seq1_id)
-    end
   end
 
   defp parse_fountain_headers(content) do

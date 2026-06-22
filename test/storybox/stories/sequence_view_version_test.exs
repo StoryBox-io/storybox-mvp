@@ -26,10 +26,15 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
       |> Ash.Changeset.for_create(:create, %{title: "Test Story", user_id: user.id})
       |> Ash.create()
 
-    sequence =
+    # Lazy bootstrap creates no Sequences — make one explicitly.
+    {:ok, sequence} =
       Storybox.Stories.Sequence
-      |> Ash.Query.filter(story_id == ^story.id)
-      |> Ash.read_one!(authorize?: false)
+      |> Ash.Changeset.for_create(:create, %{
+        name: "Sequence 1",
+        slug: "sequence-1",
+        story_id: story.id
+      })
+      |> Ash.create()
 
     {:ok, scene} =
       Storybox.Stories.Scene
@@ -109,9 +114,20 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
     }
   end
 
+  # Builds the explicit, scene-keyed pinned segment map :cut now expects.
+  defp script_seg(scene, svv) do
+    %{
+      "scene_id" => scene.id,
+      "pin_id" => svv.id,
+      "pin_type" => "script_vv",
+      "pin_version_at_creation" => svv.version_number
+    }
+  end
+
   describe "cut" do
     test "creates a SequenceViewVersion with version_number 1 on first call", %{
       sequence_view: sequence_view,
+      scene: scene,
       svv1: svv1,
       svv2: svv2,
       svv3: svv3
@@ -120,7 +136,11 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
                SequenceViewVersion
                |> Ash.ActionInput.for_action(:cut, %{
                  sequence_view_id: sequence_view.id,
-                 script_view_version_ids: [svv1.id, svv2.id, svv3.id]
+                 segments: [
+                   script_seg(scene, svv1),
+                   script_seg(scene, svv2),
+                   script_seg(scene, svv3)
+                 ]
                })
                |> Ash.run_action()
 
@@ -129,12 +149,12 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
     end
 
     test "creates exactly 3 Segments, all with view_version_type :sequence_vv and pin_type :script_vv",
-         %{sequence_view: sequence_view, svv1: svv1, svv2: svv2, svv3: svv3} do
+         %{sequence_view: sequence_view, scene: scene, svv1: svv1, svv2: svv2, svv3: svv3} do
       {:ok, vv} =
         SequenceViewVersion
         |> Ash.ActionInput.for_action(:cut, %{
           sequence_view_id: sequence_view.id,
-          script_view_version_ids: [svv1.id, svv2.id, svv3.id]
+          segments: [script_seg(scene, svv1), script_seg(scene, svv2), script_seg(scene, svv3)]
         })
         |> Ash.run_action()
 
@@ -150,6 +170,7 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
 
     test "Segments have positions 1, 2, 3 matching input order", %{
       sequence_view: sequence_view,
+      scene: scene,
       svv1: svv1,
       svv2: svv2,
       svv3: svv3
@@ -158,7 +179,7 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
         SequenceViewVersion
         |> Ash.ActionInput.for_action(:cut, %{
           sequence_view_id: sequence_view.id,
-          script_view_version_ids: [svv1.id, svv2.id, svv3.id]
+          segments: [script_seg(scene, svv1), script_seg(scene, svv2), script_seg(scene, svv3)]
         })
         |> Ash.run_action()
 
@@ -172,24 +193,23 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
       assert positions == [1, 2, 3]
     end
 
-    test "each Segment's pin_id and pin_version_at_creation match the corresponding ScriptViewVersion",
-         %{sequence_view: sequence_view, svv1: svv1, svv2: svv2, svv3: svv3} do
+    test "each Segment carries its scene_id and pin matching the supplied ScriptViewVersion",
+         %{sequence_view: sequence_view, scene: scene, svv1: svv1, svv2: svv2, svv3: svv3} do
       {:ok, vv} =
         SequenceViewVersion
         |> Ash.ActionInput.for_action(:cut, %{
           sequence_view_id: sequence_view.id,
-          script_view_version_ids: [svv1.id, svv2.id, svv3.id]
+          segments: [script_seg(scene, svv1), script_seg(scene, svv2), script_seg(scene, svv3)]
         })
         |> Ash.run_action()
 
-      segments =
+      [s1, s2, s3] =
         Segment
         |> Ash.Query.filter(view_version_id == ^vv.id)
         |> Ash.Query.sort(:position)
         |> Ash.read!(authorize?: false)
 
-      [s1, s2, s3] = segments
-
+      assert s1.scene_id == scene.id
       assert s1.pin_id == svv1.id
       assert s1.pin_version_at_creation == svv1.version_number
 
@@ -200,8 +220,33 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
       assert s3.pin_version_at_creation == svv3.version_number
     end
 
+    test "a nil-pin segment produces a scene-keyed Segment with no pin at position 1", %{
+      sequence_view: sequence_view,
+      scene: scene
+    } do
+      {:ok, vv} =
+        SequenceViewVersion
+        |> Ash.ActionInput.for_action(:cut, %{
+          sequence_view_id: sequence_view.id,
+          segments: [%{"scene_id" => scene.id}]
+        })
+        |> Ash.run_action()
+
+      [seg] =
+        Segment
+        |> Ash.Query.filter(view_version_id == ^vv.id)
+        |> Ash.read!(authorize?: false)
+
+      assert seg.scene_id == scene.id
+      assert seg.position == 1
+      assert is_nil(seg.pin_id)
+      assert is_nil(seg.pin_type)
+      assert is_nil(seg.pin_version_at_creation)
+    end
+
     test "second cut produces version_number 2; first VV's Segments are unchanged", %{
       sequence_view: sequence_view,
+      scene: scene,
       svv1: svv1,
       svv2: svv2,
       svv3: svv3
@@ -210,7 +255,7 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
         SequenceViewVersion
         |> Ash.ActionInput.for_action(:cut, %{
           sequence_view_id: sequence_view.id,
-          script_view_version_ids: [svv1.id, svv2.id, svv3.id]
+          segments: [script_seg(scene, svv1), script_seg(scene, svv2), script_seg(scene, svv3)]
         })
         |> Ash.run_action()
 
@@ -218,7 +263,7 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
         SequenceViewVersion
         |> Ash.ActionInput.for_action(:cut, %{
           sequence_view_id: sequence_view.id,
-          script_view_version_ids: [svv3.id, svv1.id, svv2.id]
+          segments: [script_seg(scene, svv3), script_seg(scene, svv1), script_seg(scene, svv2)]
         })
         |> Ash.run_action()
 
@@ -235,12 +280,12 @@ defmodule Storybox.Stories.SequenceViewVersionTest do
     end
 
     test "Segment.resolve_pin/1 returns {:resolved, %ScriptViewVersion{}} for a :script_vv Segment",
-         %{sequence_view: sequence_view, svv1: svv1, svv2: svv2, svv3: svv3} do
+         %{sequence_view: sequence_view, scene: scene, svv1: svv1, svv2: svv2, svv3: svv3} do
       {:ok, vv} =
         SequenceViewVersion
         |> Ash.ActionInput.for_action(:cut, %{
           sequence_view_id: sequence_view.id,
-          script_view_version_ids: [svv1.id, svv2.id, svv3.id]
+          segments: [script_seg(scene, svv1), script_seg(scene, svv2), script_seg(scene, svv3)]
         })
         |> Ash.run_action()
 

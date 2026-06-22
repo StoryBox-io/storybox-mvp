@@ -380,22 +380,20 @@ defmodule Storybox.Stories.TaskTest do
 
   describe "SynopsisPiece :create_version task generation" do
     test "creates a :review task for a stale SynopsisViewVersion", %{story: story} do
-      # Get the bootstrap synopsis view and its VV
       {:ok, synopsis_view} =
         SynopsisView
         |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
         |> Ash.run_action(authorize?: false)
 
-      _bootstrap_svvs =
-        SynopsisViewVersion
-        |> Ash.Query.filter(synopsis_view_id == ^synopsis_view.id)
-        |> Ash.read!(authorize?: false)
-
-      # Get the default sequence created by bootstrap
-      seq =
+      # Lazy bootstrap creates no Sequences — make one (it registers a spine entry).
+      {:ok, seq} =
         Storybox.Stories.Sequence
-        |> Ash.Query.filter(story_id == ^story.id and slug == "sequence-1")
-        |> Ash.read_one!(authorize?: false)
+        |> Ash.Changeset.for_create(:create, %{
+          story_id: story.id,
+          name: "Sequence 1",
+          slug: "sequence-1"
+        })
+        |> Ash.create(authorize?: false)
 
       # Create v1 piece for the default sequence
       uri1 = "storybox://test/synopsis/#{seq.id}/v1.fountain"

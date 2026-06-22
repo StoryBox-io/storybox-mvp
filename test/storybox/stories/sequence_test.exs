@@ -1,6 +1,8 @@
 defmodule Storybox.Stories.SequenceTest do
   use Storybox.DataCase
 
+  require Ash.Query
+
   setup do
     {:ok, user} =
       Storybox.Accounts.User
@@ -144,7 +146,7 @@ defmodule Storybox.Stories.SequenceTest do
       {:ok, story_a_loaded} = Ash.load(story_a, :sequences)
 
       sequence_names = story_a_loaded.sequences |> Enum.map(& &1.name) |> Enum.sort()
-      assert sequence_names == ["Cottage", "Prologue", "Sequence 1"]
+      assert sequence_names == ["Cottage", "Prologue"]
       assert Enum.all?(story_a_loaded.sequences, &(&1.story_id == story_a.id))
     end
   end
@@ -199,6 +201,13 @@ defmodule Storybox.Stories.SequenceTest do
           story_id: story_a.id
         })
         |> Ash.create()
+
+      # A Sequence owns a StorySpine entry (auto-registered on create); remove it
+      # first so the destroy isn't blocked by the foreign key.
+      Storybox.Stories.StorySpineEntry
+      |> Ash.Query.filter(sequence_id == ^sequence.id)
+      |> Ash.read!(authorize?: false)
+      |> Enum.each(&Ash.destroy!(&1, authorize?: false))
 
       :ok =
         sequence
