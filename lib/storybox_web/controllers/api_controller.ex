@@ -518,6 +518,41 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  # Writes a treatment-prose SequencePiece version, provenance-free. The target
+  # sequence is addressed by slug: if it does not yet exist for this story it is
+  # lazily materialized (Sequence.create's after_action registers its spine
+  # entry, materializing the StorySpine too). `name` defaults to the slug.
+  def create_sequence_piece(conn, %{"seq_slug" => seq_slug} = params) do
+    story = conn.assigns.current_story
+    content = params["content"]
+
+    if is_nil(content) or content == "" do
+      conn |> put_status(400) |> json(%{error: "content is required"})
+    else
+      name = Map.get(params, "name", seq_slug)
+
+      case find_or_create_sequence(story.id, seq_slug, name) do
+        {:error, _} ->
+          conn |> put_status(500) |> json(%{error: "internal error"})
+
+        {:ok, sequence} ->
+          case Storybox.Stories.SequencePiece
+               |> Ash.ActionInput.for_action(:create_version, %{
+                 story_id: story.id,
+                 sequence_id: sequence.id,
+                 content: content
+               })
+               |> Ash.run_action(authorize?: false) do
+            {:ok, piece} ->
+              conn |> put_status(201) |> json(format_version(piece))
+
+            {:error, _} ->
+              conn |> put_status(503) |> json(%{error: "storage error"})
+          end
+      end
+    end
+  end
+
   def list_tasks(conn, params) do
     story = conn.assigns.current_story
     status_str = Map.get(params, "status", "pending")
@@ -1096,6 +1131,25 @@ defmodule StoryboxWeb.ApiController do
     Storybox.Stories.Sequence
     |> Ash.Query.filter(id == ^seq_id and story_id == ^story_id)
     |> Ash.read_one!(authorize?: false)
+  end
+
+  # Resolves a Sequence by slug within a story, creating it if absent. The
+  # create's after_action materializes the StorySpine + entry.
+  defp find_or_create_sequence(story_id, slug, name) do
+    case Storybox.Stories.Sequence
+         |> Ash.Query.filter(slug == ^slug and story_id == ^story_id)
+         |> Ash.read_one(authorize?: false) do
+      {:ok, nil} ->
+        Storybox.Stories.Sequence
+        |> Ash.Changeset.for_create(:create, %{story_id: story_id, name: name, slug: slug})
+        |> Ash.create(authorize?: false)
+
+      {:ok, seq} ->
+        {:ok, seq}
+
+      {:error, error} ->
+        {:error, error}
+    end
   end
 
   defp format_version(nil), do: nil
