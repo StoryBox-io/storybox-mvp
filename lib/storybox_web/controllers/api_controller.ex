@@ -75,12 +75,13 @@ defmodule StoryboxWeb.ApiController do
             |> json(%{error: "no synopsis found"})
 
           {:ok, vv} ->
-            json(conn, %{
-              story_id: story.id,
-              synopsis_view_id: view.id,
-              version_number: vv.version_number,
-              inserted_at: vv.inserted_at
-            })
+            case assemble_synopsis_view(story, view, vv) do
+              {:error, :content_unavailable} ->
+                conn |> put_status(503) |> json(%{error: "content unavailable"})
+
+              {:ok, response} ->
+                json(conn, response)
+            end
 
           {:error, _} ->
             conn
@@ -92,6 +93,76 @@ defmodule StoryboxWeb.ApiController do
         conn
         |> put_status(500)
         |> json(%{error: "internal error"})
+    end
+  end
+
+  # Resolves the latest SynopsisViewVersion to per-sequence paragraphs. Segments
+  # pin directly to SynopsisPiece (one layer, no intermediate VVs), keyed by
+  # sequence_id. Iteration follows the live StorySpine order — segments whose
+  # sequence is no longer on the spine are skipped (orchestrator R2); an empty
+  # spine yields no paragraphs (orchestrator R3). Null-pin segments are recorded
+  # in `unresolvable`; a storage failure surfaces as `{:error, :content_unavailable}`.
+  defp assemble_synopsis_view(story, view, vv) do
+    synopsis_vv_type = :synopsis_vv
+
+    segments =
+      Storybox.Stories.Segment
+      |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == ^synopsis_vv_type)
+      |> Ash.read!(authorize?: false)
+
+    seg_by_seq = Map.new(segments, fn seg -> {seg.sequence_id, seg} end)
+
+    spine_order = Storybox.Stories.StorySpine.sequence_ids_in_order(story.id)
+
+    result =
+      Enum.reduce_while(spine_order, {:ok, [], []}, fn seq_id, {:ok, paras, unres} ->
+        case Map.get(seg_by_seq, seq_id) do
+          nil ->
+            # Sequence on the spine but not in this VV (cut before it existed) — skip.
+            {:cont, {:ok, paras, unres}}
+
+          %{pin_id: nil} = seg ->
+            {:cont,
+             {:ok, paras, unres ++ [%{sequence_id: seg.sequence_id, position: seg.position}]}}
+
+          seg ->
+            case fetch_synopsis_piece_content(seg.pin_id) do
+              {:ok, content} ->
+                {:cont, {:ok, paras ++ [%{sequence_id: seq_id, content: content}], unres}}
+
+              {:error, :content_unavailable} ->
+                {:halt, {:error, :content_unavailable}}
+            end
+        end
+      end)
+
+    case result do
+      {:error, reason} ->
+        {:error, reason}
+
+      {:ok, paragraphs, unresolvable} ->
+        {:ok,
+         %{
+           story_id: story.id,
+           synopsis_view_id: view.id,
+           version_number: vv.version_number,
+           inserted_at: vv.inserted_at,
+           resolved: unresolvable == [],
+           unresolvable: unresolvable,
+           paragraphs: paragraphs
+         }}
+    end
+  end
+
+  defp fetch_synopsis_piece_content(pin_id) do
+    piece =
+      Storybox.Stories.SynopsisPiece
+      |> Ash.Query.filter(id == ^pin_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case Storybox.Storage.get_content(piece.content_uri) do
+      {:ok, content} -> {:ok, content}
+      {:error, _} -> {:error, :content_unavailable}
     end
   end
 
