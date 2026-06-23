@@ -46,6 +46,7 @@ defmodule StoryboxWeb.Router do
 
     get "/stories/:story_id/ping", ApiController, :ping
     get "/stories/:story_id/views/synopsis", ApiController, :synopsis_view
+    get "/stories/:story_id/views/treatment", ApiController, :treatment_view
     get "/stories/:story_id/views/script", ApiController, :script_view
     post "/stories/:story_id/scenes/:id/versions", ApiController, :create_scene_version
     get "/stories/:story_id/tasks", ApiController, :list_tasks

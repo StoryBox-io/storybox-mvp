@@ -166,6 +166,126 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  def treatment_view(conn, _params) do
+    story = conn.assigns.current_story
+
+    treatment_view =
+      Storybox.Stories.TreatmentView
+      |> Ash.Query.filter(story_id == ^story.id)
+      |> Ash.read_one(authorize?: false)
+
+    case treatment_view do
+      {:ok, nil} ->
+        conn
+        |> put_status(404)
+        |> json(%{error: "no treatment found"})
+
+      {:ok, view} ->
+        latest_vv =
+          Storybox.Stories.TreatmentViewVersion
+          |> Ash.Query.filter(treatment_view_id == ^view.id)
+          |> Ash.Query.sort(version_number: :desc)
+          |> Ash.Query.limit(1)
+          |> Ash.read_one(authorize?: false)
+
+        case latest_vv do
+          {:ok, nil} ->
+            conn
+            |> put_status(404)
+            |> json(%{error: "no treatment found"})
+
+          {:ok, vv} ->
+            case assemble_treatment_view(story, view, vv) do
+              {:error, :content_unavailable} ->
+                conn |> put_status(503) |> json(%{error: "content unavailable"})
+
+              {:ok, response} ->
+                json(conn, response)
+            end
+
+          {:error, _} ->
+            conn
+            |> put_status(500)
+            |> json(%{error: "internal error"})
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(500)
+        |> json(%{error: "internal error"})
+    end
+  end
+
+  # Resolves the latest TreatmentViewVersion to per-sequence paragraphs. Segments
+  # pin directly to SequencePiece (one layer, no intermediate VVs), keyed by
+  # sequence_id. Iteration follows the live StorySpine order — segments whose
+  # sequence is no longer on the spine are skipped (orchestrator R2); an empty
+  # spine yields no paragraphs (orchestrator R3). Null-pin segments are recorded
+  # in `unresolvable`; a storage failure surfaces as `{:error, :content_unavailable}`.
+  defp assemble_treatment_view(story, view, vv) do
+    treatment_vv_type = :treatment_vv
+
+    segments =
+      Storybox.Stories.Segment
+      |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == ^treatment_vv_type)
+      |> Ash.read!(authorize?: false)
+
+    seg_by_seq = Map.new(segments, fn seg -> {seg.sequence_id, seg} end)
+
+    spine_order = Storybox.Stories.StorySpine.sequence_ids_in_order(story.id)
+
+    result =
+      Enum.reduce_while(spine_order, {:ok, [], []}, fn seq_id, {:ok, paras, unres} ->
+        case Map.get(seg_by_seq, seq_id) do
+          nil ->
+            # Sequence on the spine but not in this VV (cut before it existed) — skip.
+            {:cont, {:ok, paras, unres}}
+
+          %{pin_id: nil} = seg ->
+            {:cont,
+             {:ok, paras, unres ++ [%{sequence_id: seg.sequence_id, position: seg.position}]}}
+
+          seg ->
+            case fetch_sequence_piece_content(seg.pin_id) do
+              {:ok, content} ->
+                {:cont, {:ok, paras ++ [%{sequence_id: seq_id, content: content}], unres}}
+
+              {:error, :content_unavailable} ->
+                {:halt, {:error, :content_unavailable}}
+            end
+        end
+      end)
+
+    case result do
+      {:error, reason} ->
+        {:error, reason}
+
+      {:ok, paragraphs, unresolvable} ->
+        {:ok,
+         %{
+           story_id: story.id,
+           treatment_view_id: view.id,
+           version_number: vv.version_number,
+           inserted_at: vv.inserted_at,
+           resolved: unresolvable == [],
+           unresolvable: unresolvable,
+           paragraphs: paragraphs
+         }}
+    end
+  end
+
+  defp fetch_sequence_piece_content(pin_id) do
+    piece =
+      Storybox.Stories.SequencePiece
+      |> Ash.Query.filter(id == ^pin_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case Storybox.Storage.get_content(piece.content_uri) do
+      {:ok, content} -> {:ok, content}
+      {:error, _} -> {:error, :content_unavailable}
+    end
+  end
+
   def script_view(conn, params) do
     story = conn.assigns.current_story
 
