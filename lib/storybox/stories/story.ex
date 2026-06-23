@@ -34,6 +34,9 @@ defmodule Storybox.Stories.Story do
     has_many :sequence_views, Storybox.Stories.SequenceView, public?: true
     has_one :story_script_view, Storybox.Stories.StoryScriptView, public?: true
     has_one :story_spine, Storybox.Stories.StorySpine, public?: true
+
+    has_one :throughline_view, Storybox.Stories.ThroughlineView, public?: true
+    has_many :throughline_pieces, Storybox.Stories.ThroughlinePiece, public?: true
   end
 
   actions do

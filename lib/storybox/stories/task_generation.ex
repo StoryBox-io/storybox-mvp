@@ -203,6 +203,11 @@ defmodule Storybox.Stories.TaskGeneration do
     :ok
   end
 
+  # Through-line pieces deliberately generate no tasks yet: the cascade into
+  # synopsis staleness is a separate ticket. This explicit no-op keeps
+  # ThroughlinePiece.create_version green until that cascade lands.
+  def after_piece_version(_piece, :throughline_piece), do: :ok
+
   def after_piece_version(piece, :script_piece) do
     scene =
       Scene

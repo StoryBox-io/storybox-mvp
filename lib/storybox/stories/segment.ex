@@ -12,7 +12,8 @@ defmodule Storybox.Stories.Segment do
     :sequence_vv,
     :story_script_vv,
     :character_vv,
-    :world_vv
+    :world_vv,
+    :throughline_vv
   ]
 
   @piece_pin_types [
@@ -20,7 +21,8 @@ defmodule Storybox.Stories.Segment do
     :sequence_piece,
     :script_piece,
     :character_piece,
-    :world_piece
+    :world_piece,
+    :throughline_piece
   ]
 
   @pin_types @piece_pin_types ++ @view_version_types
@@ -247,6 +249,32 @@ defmodule Storybox.Stories.Segment do
     |> Enum.max(fn -> nil end)
   end
 
+  def pin_target_latest_version(%{pin_type: :throughline_piece, pin_id: pin_id})
+      when not is_nil(pin_id) do
+    pinned =
+      Storybox.Stories.ThroughlinePiece
+      |> Ash.Query.filter(id == ^pin_id)
+      |> Ash.read_one!(authorize?: false)
+
+    # Lineage key is (story_id, character_id); a nil character_id (the
+    # controlling idea) must be matched with is_nil/1, not an equality check.
+    query =
+      case pinned.character_id do
+        nil ->
+          Storybox.Stories.ThroughlinePiece
+          |> Ash.Query.filter(story_id == ^pinned.story_id and is_nil(character_id))
+
+        character_id ->
+          Storybox.Stories.ThroughlinePiece
+          |> Ash.Query.filter(story_id == ^pinned.story_id and character_id == ^character_id)
+      end
+
+    query
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(& &1.version_number)
+    |> Enum.max(fn -> nil end)
+  end
+
   def pin_target_latest_version(%{pin_type: pin_type}) do
     raise ArgumentError,
           "pin_target_latest_version/1 is not yet implemented for pin_type #{inspect(pin_type)}"
@@ -259,6 +287,7 @@ defmodule Storybox.Stories.Segment do
   defp pin_module!(:sequence_vv), do: Storybox.Stories.SequenceViewVersion
   defp pin_module!(:character_piece), do: Storybox.Stories.CharacterPiece
   defp pin_module!(:world_piece), do: Storybox.Stories.WorldPiece
+  defp pin_module!(:throughline_piece), do: Storybox.Stories.ThroughlinePiece
 
   defp pin_module!(pin_type) when pin_type in @pin_types do
     raise ArgumentError,

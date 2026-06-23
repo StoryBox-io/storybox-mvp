@@ -31,6 +31,9 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.StorySpineEntry
     resource Storybox.Stories.StorySpineViewVersion
     resource Storybox.Stories.StorySpineVvEntry
+    resource Storybox.Stories.ThroughlinePiece
+    resource Storybox.Stories.ThroughlineView
+    resource Storybox.Stories.ThroughlineViewVersion
     resource Storybox.Stories.Task
   end
 end
