@@ -174,6 +174,42 @@ defmodule Storybox.Seeds.LittleWitchLoaderTest do
       end
     end
 
+    test "each scene's slugline is peeled to the Scene and the body stays heading-free",
+         %{story: story} do
+      Storybox.Seeds.LittleWitchLoader.seed!(story)
+
+      expected_sluglines = %{
+        "ext_coronation_fire" => "EXT. CORONATION SQUARE - NIGHT",
+        "ext_cottage_night" => "EXT. COTTAGE - NIGHT",
+        "ext_ruins_dawn" => "EXT. RUINS - DAWN",
+        "int_cottage_night" => "INT. COTTAGE - NIGHT"
+      }
+
+      for {slug, expected} <- expected_sluglines do
+        scene = scene_by_slug(story.id, slug)
+        assert scene.slugline == expected
+
+        piece =
+          ScriptPiece
+          |> Ash.Query.filter(scene_id == ^scene.id)
+          |> Ash.Query.sort(version_number: :desc)
+          |> Ash.read!(authorize?: false)
+          |> List.first()
+
+        {:ok, body} = Storybox.Storage.get_content(piece.content_uri)
+
+        # The body is action/dialogue only — no leading slugline and no
+        # `Title:/Sequence:/Source:` title-page block.
+        refute String.contains?(body, expected)
+        refute String.contains?(body, "Source: V5")
+        refute String.starts_with?(body, ".")
+      end
+
+      # A scene with no script file carries no slugline.
+      kestrel = scene_by_slug(story.id, "ext_ruins_kestrel")
+      assert kestrel.slugline == nil
+    end
+
     test "exactly 1 pending creation task targeting Reckoning SequenceView", %{story: story} do
       Storybox.Seeds.LittleWitchLoader.seed!(story)
 

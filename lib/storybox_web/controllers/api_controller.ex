@@ -669,12 +669,20 @@ defmodule StoryboxWeb.ApiController do
 
   defp fetch_all_content(pieces) do
     Enum.reduce_while(pieces, {:ok, []}, fn piece, {:ok, acc} ->
+      heading = compose_scene_heading(read_by_id(Storybox.Stories.Scene, piece.scene_id))
+
       case Storybox.Storage.get_content(piece.content_uri) do
-        {:ok, content} -> {:cont, {:ok, acc ++ [content]}}
+        {:ok, body} -> {:cont, {:ok, acc ++ ["#{heading}\n\n#{body}"]}}
         {:error, _} -> {:halt, {:error, :content_unavailable}}
       end
     end)
   end
+
+  # Composes a scene's screenplay heading for assembly: a real slugline verbatim,
+  # else the rough `slug` force-dotted so it still parses as a Fountain scene
+  # heading. A missing scene falls back to a dotted placeholder.
+  defp compose_scene_heading(nil), do: ".unknown"
+  defp compose_scene_heading(scene), do: scene.slugline || ".#{scene.slug}"
 
   # ── format=fountain ───────────────────────────────────────────────────────
 
@@ -751,8 +759,10 @@ defmodule StoryboxWeb.ApiController do
   defp resolve_slot_content(slots) do
     Enum.reduce_while(slots, {:ok, []}, fn
       {:piece, piece}, {:ok, acc} ->
+        heading = compose_scene_heading(read_by_id(Storybox.Stories.Scene, piece.scene_id))
+
         case Storybox.Storage.get_content(piece.content_uri) do
-          {:ok, content} -> {:cont, {:ok, acc ++ [{:content, content}]}}
+          {:ok, body} -> {:cont, {:ok, acc ++ [{:content, "#{heading}\n\n#{body}"}]}}
           {:error, _} -> {:halt, {:error, :content_unavailable}}
         end
 

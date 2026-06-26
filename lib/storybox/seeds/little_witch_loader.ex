@@ -279,11 +279,25 @@ defmodule Storybox.Seeds.LittleWitchLoader do
       Enum.reduce(scene_slugs, {%{}, %{}, %{}}, fn slug, {scenes, views, vvs} ->
         scene_dir = Path.join(scenes_dir, slug)
 
+        script_files =
+          Path.wildcard(Path.join(scene_dir, "script-v*.fountain"))
+          |> Enum.sort_by(&version_from_filename/1)
+
+        # The slugline is a single scene-level field; for a multi-version scene it
+        # is sourced from the latest version's file (orchestrator review). Scenes
+        # with no script file keep a nil slugline.
+        slugline =
+          case List.last(script_files) do
+            nil -> nil
+            file -> file |> File.read!() |> parse_scene_fountain() |> elem(0)
+          end
+
         scene =
           Scene
           |> Ash.Changeset.for_create(:create, %{
             motif: authored_motif(slug),
             slug: slug,
+            slugline: slugline,
             story_id: story.id
           })
           |> Ash.create!(authorize?: false)
@@ -293,19 +307,15 @@ defmodule Storybox.Seeds.LittleWitchLoader do
           |> Ash.Changeset.for_create(:create, %{scene_id: scene.id})
           |> Ash.create!(authorize?: false)
 
-        script_files =
-          Path.wildcard(Path.join(scene_dir, "script-v*.fountain"))
-          |> Enum.sort_by(&version_from_filename/1)
-
         updated_vvs =
           if script_files != [] do
             for file <- script_files do
-              content = File.read!(file)
+              {_slugline, body} = parse_scene_fountain(File.read!(file))
 
               ScriptPiece
               |> Ash.ActionInput.for_action(:create_version, %{
                 scene_id: scene.id,
-                content: content
+                content: body
               })
               |> Ash.run_action!(authorize?: false)
             end
@@ -406,6 +416,50 @@ defmodule Storybox.Seeds.LittleWitchLoader do
       end
     end)
   end
+
+  # Separates a scene `.fountain` file into `{slugline, body}`. A seed scene file
+  # opens with a `Key: Value` title-page block, then the screenplay slugline, then
+  # the action/dialogue body. The slugline is peeled off as the Scene's heading and
+  # the body is stored heading-free in the ScriptPiece.
+  #
+  # Defensive against a file authored without a title-page block: if the first
+  # non-blank line is not a title-page header it is taken as the slugline directly.
+  # Empty / whitespace-only content yields `{nil, ""}`.
+  defp parse_scene_fountain(content) do
+    after_title_page =
+      content
+      |> String.split("\n")
+      |> Enum.drop_while(&(String.trim(&1) == ""))
+      |> drop_title_page()
+
+    case Enum.drop_while(after_title_page, &(String.trim(&1) == "")) do
+      [] ->
+        {nil, ""}
+
+      [slugline | rest] ->
+        body =
+          rest
+          |> Enum.drop_while(&(String.trim(&1) == ""))
+          |> Enum.join("\n")
+
+        {String.trim(slugline), body}
+    end
+  end
+
+  # Drops a leading `Key: Value` title-page block (up to the first blank line) when
+  # one is present. Lines that are not title-page headers are returned untouched so
+  # a heading-first file is parsed correctly.
+  defp drop_title_page([first | _] = lines) do
+    if title_page_header?(first) do
+      Enum.drop_while(lines, &(String.trim(&1) != ""))
+    else
+      lines
+    end
+  end
+
+  defp drop_title_page([]), do: []
+
+  defp title_page_header?(line), do: Regex.match?(~r/^[A-Za-z][\w ]*:\s/, line)
 
   defp version_from_filename(path) do
     base = Path.basename(path, ".fountain")
