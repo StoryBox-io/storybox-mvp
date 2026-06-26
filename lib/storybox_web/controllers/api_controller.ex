@@ -286,6 +286,127 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  def throughline_view(conn, _params) do
+    story = conn.assigns.current_story
+
+    throughline_view =
+      Storybox.Stories.ThroughlineView
+      |> Ash.Query.filter(story_id == ^story.id)
+      |> Ash.read_one(authorize?: false)
+
+    case throughline_view do
+      {:ok, nil} ->
+        conn
+        |> put_status(404)
+        |> json(%{error: "no through-line found"})
+
+      {:ok, view} ->
+        latest_vv =
+          Storybox.Stories.ThroughlineViewVersion
+          |> Ash.Query.filter(throughline_view_id == ^view.id)
+          |> Ash.Query.sort(version_number: :desc)
+          |> Ash.Query.limit(1)
+          |> Ash.read_one(authorize?: false)
+
+        case latest_vv do
+          {:ok, nil} ->
+            conn
+            |> put_status(404)
+            |> json(%{error: "no through-line found"})
+
+          {:ok, vv} ->
+            case assemble_throughline_view(story, view, vv) do
+              {:error, :content_unavailable} ->
+                conn |> put_status(503) |> json(%{error: "content unavailable"})
+
+              {:ok, response} ->
+                json(conn, response)
+            end
+
+          {:error, _} ->
+            conn
+            |> put_status(500)
+            |> json(%{error: "internal error"})
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(500)
+        |> json(%{error: "internal error"})
+    end
+  end
+
+  # Resolves the latest ThroughlineViewVersion to the controlling idea + one
+  # through-line per character. The harness has no spine — Segments pin directly
+  # to ThroughlinePiece and are traversed in `:position` order. Each resolved
+  # piece is split on its `character_id`: a nil character is the Story's
+  # controlling idea, a set character is that character's through-line. Null-pin
+  # segments are recorded in `unresolvable`; a storage failure surfaces as
+  # `{:error, :content_unavailable}`.
+  defp assemble_throughline_view(story, view, vv) do
+    throughline_vv_type = :throughline_vv
+
+    segments =
+      Storybox.Stories.Segment
+      |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == ^throughline_vv_type)
+      |> Ash.Query.sort(:position)
+      |> Ash.read!(authorize?: false)
+
+    result =
+      Enum.reduce_while(segments, {:ok, nil, [], []}, fn seg, {:ok, idea, lines, unres} ->
+        case seg do
+          %{pin_id: nil} ->
+            {:cont, {:ok, idea, lines, unres ++ [%{position: seg.position}]}}
+
+          seg ->
+            case fetch_throughline_piece_content(seg.pin_id) do
+              {:ok, %{character_id: nil}, content} ->
+                {:cont, {:ok, content, lines, unres}}
+
+              {:ok, piece, content} ->
+                {:cont,
+                 {:ok, idea, lines ++ [%{character_id: piece.character_id, content: content}],
+                  unres}}
+
+              {:error, :content_unavailable} ->
+                {:halt, {:error, :content_unavailable}}
+            end
+        end
+      end)
+
+    case result do
+      {:error, reason} ->
+        {:error, reason}
+
+      {:ok, controlling_idea, through_lines, unresolvable} ->
+        {:ok,
+         %{
+           story_id: story.id,
+           throughline_view_id: view.id,
+           version_number: vv.version_number,
+           inserted_at: vv.inserted_at,
+           resolved: unresolvable == [],
+           unresolvable: unresolvable,
+           controlling_idea: controlling_idea,
+           through_lines: through_lines
+         }}
+    end
+  end
+
+  # Loads the pinned ThroughlinePiece and its content. Returns the piece itself
+  # (not just the content) so the caller can split on `character_id`.
+  defp fetch_throughline_piece_content(pin_id) do
+    piece =
+      Storybox.Stories.ThroughlinePiece
+      |> Ash.Query.filter(id == ^pin_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case Storybox.Storage.get_content(piece.content_uri) do
+      {:ok, content} -> {:ok, piece, content}
+      {:error, _} -> {:error, :content_unavailable}
+    end
+  end
+
   def script_view(conn, params) do
     story = conn.assigns.current_story
 
