@@ -75,6 +75,7 @@ defmodule StoryboxWeb.Router do
     post "/stories/:story_id/characters/:char_id/pieces", ApiController, :create_character_piece
     get "/stories/:story_id/world", ApiController, :world_detail
     post "/stories/:story_id/world/pieces", ApiController, :create_world_piece
+    post "/stories/:story_id/throughline/pieces", ApiController, :create_throughline_piece
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
