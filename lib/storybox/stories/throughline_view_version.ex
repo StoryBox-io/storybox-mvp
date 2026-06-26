@@ -118,6 +118,10 @@ defmodule Storybox.Stories.ThroughlineViewVersion do
           story_id
         )
 
+        # Whole-synopsis cascade: a re-cut harness flags every stale
+        # SynopsisViewVersion for :review (re-pin or refine).
+        Storybox.Stories.TaskGeneration.after_throughline_vv_cut(vv.id, story_id)
+
         {:ok, vv}
       end
     end

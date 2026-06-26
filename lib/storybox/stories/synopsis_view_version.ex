@@ -8,6 +8,13 @@ defmodule Storybox.Stories.SynopsisViewVersion do
   postgres do
     table "synopsis_view_versions"
     repo Storybox.Repo
+
+    references do
+      # A Through-line VV is immutable and not deleted in normal operation; if one
+      # is ever removed, the harness reference nils out (staleness treats a nil
+      # reference as "not stale") rather than cascading.
+      reference :throughline_view_version, on_delete: :nilify
+    end
   end
 
   attributes do
@@ -15,11 +22,24 @@ defmodule Storybox.Stories.SynopsisViewVersion do
 
     attribute :version_number, :integer, allow_nil?: false, public?: true
 
+    # View-level harness reference: the Through-line ViewVersion this synopsis VV
+    # was cut against. It sits alongside the per-Sequence segment list (never as a
+    # segment) and drives harness staleness — a newer Through-line VV than the one
+    # recorded makes this SynopsisViewVersion read stale. Nil when no Through-line
+    # View/VV existed at cut time.
+    attribute :throughline_view_version_id, :uuid, allow_nil?: true, public?: true
+
     create_timestamp :inserted_at
   end
 
   relationships do
     belongs_to :synopsis_view, Storybox.Stories.SynopsisView, allow_nil?: false, public?: true
+
+    belongs_to :throughline_view_version, Storybox.Stories.ThroughlineViewVersion,
+      allow_nil?: true,
+      public?: true,
+      define_attribute?: false,
+      source_attribute: :throughline_view_version_id
 
     has_many :segments, Storybox.Stories.Segment,
       destination_attribute: :view_version_id,
@@ -35,7 +55,7 @@ defmodule Storybox.Stories.SynopsisViewVersion do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:synopsis_view_id, :version_number]
+      accept [:synopsis_view_id, :version_number, :throughline_view_version_id]
     end
 
     action :cut, :struct do
@@ -73,11 +93,14 @@ defmodule Storybox.Stories.SynopsisViewVersion do
           |> Enum.max(fn -> 0 end)
           |> Kernel.+(1)
 
+        throughline_view_version_id = latest_throughline_view_version_id(story_id)
+
         {:ok, vv} =
           Storybox.Stories.SynopsisViewVersion
           |> Ash.Changeset.for_create(:create, %{
             synopsis_view_id: synopsis_view_id,
-            version_number: next_version_number
+            version_number: next_version_number,
+            throughline_view_version_id: throughline_view_version_id
           })
           |> Ash.create(authorize?: false)
 
@@ -120,6 +143,31 @@ defmodule Storybox.Stories.SynopsisViewVersion do
 
         {:ok, vv}
       end
+    end
+  end
+
+  # Records the harness snapshot: the id of the story's latest Through-line
+  # ViewVersion (by version_number) at cut time, or nil when the story has no
+  # Through-line View or no Through-line VVs yet. This is a view-level reference,
+  # never a segment.
+  defp latest_throughline_view_version_id(story_id) do
+    case Storybox.Stories.ThroughlineView
+         |> Ash.Query.filter(story_id == ^story_id)
+         |> Ash.read_one!(authorize?: false) do
+      nil ->
+        nil
+
+      throughline_view ->
+        Storybox.Stories.ThroughlineViewVersion
+        |> Ash.Query.filter(throughline_view_id == ^throughline_view.id)
+        |> Ash.Query.sort(version_number: :desc)
+        |> Ash.Query.limit(1)
+        |> Ash.read!(authorize?: false)
+        |> List.first()
+        |> case do
+          nil -> nil
+          tvv -> tvv.id
+        end
     end
   end
 
