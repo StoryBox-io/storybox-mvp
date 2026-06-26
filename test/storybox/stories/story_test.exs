@@ -17,7 +17,7 @@ defmodule Storybox.Stories.StoryTest do
   end
 
   describe "create" do
-    test "creates a story with title and user_id, defaulting through_lines", %{user: user} do
+    test "creates a story with title and user_id", %{user: user} do
       assert {:ok, story} =
                Storybox.Stories.Story
                |> Ash.Changeset.for_create(:create, %{title: "My Story", user_id: user.id})
@@ -25,7 +25,6 @@ defmodule Storybox.Stories.StoryTest do
 
       assert story.title == "My Story"
       assert story.user_id == user.id
-      assert story.through_lines == ["preference"]
     end
 
     test "fails without a title", %{user: user} do

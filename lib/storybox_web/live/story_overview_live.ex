@@ -144,9 +144,6 @@ defmodule StoryboxWeb.StoryOverviewLive do
               <span class="font-medium">Controlling idea:</span> {@story.controlling_idea}
             </p>
           <% end %>
-          <p class="text-base-content/60 text-sm">
-            <span class="font-medium">Through lines:</span> {Enum.join(@story.through_lines, ", ")}
-          </p>
         </div>
 
         <section class="space-y-3">
