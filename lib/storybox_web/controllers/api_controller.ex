@@ -1356,6 +1356,73 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  # Writes a ThroughlinePiece version (the Story's controlling idea when
+  # `character_id` is nil, else that character's through-line) then cuts a new
+  # Through-line ViewVersion pinning the full harness — the cut is the approval
+  # act. Unlike the single-piece view cuts, the Through-line VV carries an
+  # explicit, full-snapshot segment list (latest piece per lineage), so the
+  # read path (#184) can assemble the whole harness from one VV.
+  def create_throughline_piece(conn, params) do
+    story = conn.assigns.current_story
+    content = params["content"]
+
+    if is_nil(content) or content == "" do
+      conn |> put_status(400) |> json(%{error: "content is required"})
+    else
+      character_id = params["character_id"]
+
+      if character_id && is_nil(load_character_for_story(character_id, story.id)) do
+        conn |> put_status(404) |> json(%{error: "not found"})
+      else
+        with {:ok, _piece} <-
+               Storybox.Stories.ThroughlinePiece
+               |> Ash.ActionInput.for_action(:create_version, %{
+                 story_id: story.id,
+                 character_id: character_id,
+                 content: content
+               })
+               |> Ash.run_action(authorize?: false),
+             {:ok, view} <-
+               Storybox.Stories.ThroughlineView
+               |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+               |> Ash.run_action(authorize?: false),
+             {:ok, vv} <-
+               Storybox.Stories.ThroughlineViewVersion
+               |> Ash.ActionInput.for_action(:cut, %{
+                 throughline_view_id: view.id,
+                 segments: throughline_segments_for_story(story.id)
+               })
+               |> Ash.run_action(authorize?: false) do
+          conn |> put_status(201) |> json(format_cut_vv(vv, :throughline_vv))
+        else
+          {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+        end
+      end
+    end
+  end
+
+  # Builds the full-snapshot segment list for a Through-line cut: the latest
+  # ThroughlinePiece per lineage (one nil-character controlling idea + one per
+  # character). Runs after :create_version, so the new piece is already its
+  # lineage head. Ordered controlling-idea-first, then by character UUID for
+  # deterministic positions.
+  defp throughline_segments_for_story(story_id) do
+    Storybox.Stories.ThroughlinePiece
+    |> Ash.Query.filter(story_id == ^story_id)
+    |> Ash.Query.sort(version_number: :desc)
+    |> Ash.read!(authorize?: false)
+    |> Enum.group_by(& &1.character_id)
+    |> Enum.map(fn {_char_id, pieces} -> hd(pieces) end)
+    |> Enum.sort_by(fn p -> if is_nil(p.character_id), do: "", else: p.character_id end)
+    |> Enum.map(fn piece ->
+      %{
+        "pin_id" => piece.id,
+        "pin_type" => "throughline_piece",
+        "pin_version_at_creation" => piece.version_number
+      }
+    end)
+  end
+
   defp load_task_for_story(task_id, story_id) do
     Storybox.Stories.Task
     |> Ash.Query.filter(id == ^task_id and story_id == ^story_id)
