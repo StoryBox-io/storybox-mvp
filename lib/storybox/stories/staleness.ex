@@ -34,15 +34,58 @@ defmodule Storybox.Stories.Staleness do
     StoryScriptViewVersion,
     SynopsisView,
     SynopsisViewVersion,
+    ThroughlineViewVersion,
     TreatmentView,
     TreatmentViewVersion
   }
 
   @spec view_version_stale?(Ecto.UUID.t(), atom()) :: boolean()
+  def view_version_stale?(view_version_id, :synopsis_vv) do
+    stale_segments?(view_version_id, :synopsis_vv) or
+      throughline_harness_stale?(view_version_id)
+  end
+
   def view_version_stale?(view_version_id, view_version_type) do
+    stale_segments?(view_version_id, view_version_type)
+  end
+
+  defp stale_segments?(view_version_id, view_version_type) do
     view_version_id
     |> stale_segments(view_version_type)
     |> Enum.any?()
+  end
+
+  # A SynopsisViewVersion is harness-stale when a newer Through-line ViewVersion
+  # exists than the one it was cut against. A nil harness reference (no
+  # Through-line View/VV at cut time) is never stale.
+  defp throughline_harness_stale?(synopsis_vv_id) do
+    synopsis_vv =
+      SynopsisViewVersion
+      |> Ash.Query.filter(id == ^synopsis_vv_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case synopsis_vv && synopsis_vv.throughline_view_version_id do
+      nil ->
+        false
+
+      recorded_id ->
+        case ThroughlineViewVersion
+             |> Ash.Query.filter(id == ^recorded_id)
+             |> Ash.read_one!(authorize?: false) do
+          nil ->
+            false
+
+          recorded ->
+            latest_version =
+              ThroughlineViewVersion
+              |> Ash.Query.filter(throughline_view_id == ^recorded.throughline_view_id)
+              |> Ash.read!(authorize?: false)
+              |> Enum.map(& &1.version_number)
+              |> Enum.max(fn -> recorded.version_number end)
+
+            recorded.version_number < latest_version
+        end
+    end
   end
 
   @spec view_version_stale_segments(Ecto.UUID.t(), atom()) :: [Segment.t()]

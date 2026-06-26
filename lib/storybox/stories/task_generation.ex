@@ -12,6 +12,7 @@ defmodule Storybox.Stories.TaskGeneration do
     SynopsisView,
     SynopsisViewVersion,
     Task,
+    ThroughlineViewVersion,
     TreatmentView,
     TreatmentViewVersion,
     World,
@@ -47,6 +48,49 @@ defmodule Storybox.Stories.TaskGeneration do
       })
       |> Ash.create(authorize?: false)
     end)
+
+    :ok
+  end
+
+  @doc """
+  Called after a Through-line VV :cut. The harness is the roughest control and
+  reaches the whole synopsis: any Through-line re-cut flags every existing
+  SynopsisViewVersion that now reads harness-stale, generating a :review task
+  per stale VV (deduped by target VV). Review-all — no topology pruning.
+  """
+  def after_throughline_vv_cut(throughline_vv_id, story_id) do
+    throughline_vv =
+      ThroughlineViewVersion
+      |> Ash.Query.filter(id == ^throughline_vv_id)
+      |> Ash.read_one!(authorize?: false)
+
+    synopsis_view =
+      SynopsisView
+      |> Ash.Query.filter(story_id == ^story_id)
+      |> Ash.read_one!(authorize?: false)
+
+    if synopsis_view && throughline_vv do
+      svvs =
+        SynopsisViewVersion
+        |> Ash.Query.filter(synopsis_view_id == ^synopsis_view.id)
+        |> Ash.read!(authorize?: false)
+
+      Enum.each(svvs, fn svv ->
+        if Staleness.view_version_stale?(svv.id, :synopsis_vv) do
+          maybe_create_review_task(
+            svv.id,
+            synopsis_view.id,
+            "synopsis_vv",
+            :story,
+            story_id,
+            throughline_vv_id,
+            "throughline_vv",
+            throughline_vv.version_number,
+            story_id
+          )
+        end
+      end)
+    end
 
     :ok
   end
