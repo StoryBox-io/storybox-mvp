@@ -29,7 +29,7 @@ defmodule StoryboxWeb.ScriptViewFountainTest do
     {:ok, unres_token, _} = ApiToken.generate(%{story_id: unres_story.id, user_id: user.id})
 
     # ── main story: full resolvable chain ────────────────────────────────────
-    scene_a = create_scene(story, "Scene A")
+    scene_a = create_scene(story, "Scene A", "EXT. SCENE A - NIGHT")
     scv_a = create_script_view(scene_a)
     a_p1 = create_script_piece(scene_a, "SCENE A — DRAFT")
     a_p2 = create_script_piece(scene_a, "SCENE A — REVISED")
@@ -91,7 +91,11 @@ defmodule StoryboxWeb.ScriptViewFountainTest do
       body = response(conn, 200)
 
       assert get_resp_header(conn, "content-type") == ["text/plain; charset=utf-8"]
-      assert body == "SCENE A — REVISED\n\nSCENE B — ONLY\n\n"
+
+      # Scene A carries a real slugline (emitted verbatim); Scene B has none, so
+      # its `slug` is force-dotted into a Fountain scene heading.
+      assert body ==
+               "EXT. SCENE A - NIGHT\n\nSCENE A — REVISED\n\n.scene-b\n\nSCENE B — ONLY\n\n"
     end
 
     test "a fully resolved story has no trailing summary block", %{
@@ -126,7 +130,8 @@ defmodule StoryboxWeb.ScriptViewFountainTest do
         })
 
       # v1 pins the older chain, so snapshot mode yields DRAFT, not REVISED.
-      assert response(conn, 200) == "SCENE A — DRAFT\n\nSCENE B — ONLY\n\n"
+      assert response(conn, 200) ==
+               "EXT. SCENE A - NIGHT\n\nSCENE A — DRAFT\n\n.scene-b\n\nSCENE B — ONLY\n\n"
     end
 
     test "unknown snapshot_id returns 404 JSON before chunking starts", %{
@@ -241,6 +246,11 @@ defmodule StoryboxWeb.ScriptViewFountainTest do
 
       assert get_resp_header(conn, "content-type") == ["text/plain; charset=utf-8"]
       assert body != ""
+
+      # The scene heading is sourced from the Scene's slugline and emitted before
+      # the body; the title-page block the seed file embeds is stripped on load.
+      assert body =~ "EXT. CORONATION SQUARE - NIGHT"
+      refute body =~ "Source: V5"
 
       # The "reckoning" sequence has one null-pin Segment in the seed data, so
       # the gap appears inline and in the trailing summary.

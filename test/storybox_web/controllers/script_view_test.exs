@@ -44,7 +44,7 @@ defmodule StoryboxWeb.ScriptViewTest do
     {:ok, empty_token, _} = ApiToken.generate(%{story_id: empty_story.id, user_id: user.id})
 
     # ── main story: full resolvable chain ────────────────────────────────────
-    scene_a = create_scene(story, "Scene A")
+    scene_a = create_scene(story, "Scene A", "EXT. SCENE A - NIGHT")
     scv_a = create_script_view(scene_a)
     a_p1 = create_script_piece(scene_a, "SCENE A — DRAFT")
     a_p2 = create_script_piece(scene_a, "SCENE A — REVISED")
@@ -118,7 +118,10 @@ defmodule StoryboxWeb.ScriptViewTest do
       assert body["resolved"] == true
       assert body["unresolvable"] == []
       assert body["story_script_view_version_id"] == ssvv_v2.id
-      assert body["content"] == "SCENE A — REVISED\n\nSCENE B — ONLY"
+      # Scene A carries a real slugline (emitted verbatim); Scene B has none, so
+      # its `slug` is force-dotted into a Fountain scene heading.
+      assert body["content"] ==
+               "EXT. SCENE A - NIGHT\n\nSCENE A — REVISED\n\n.scene-b\n\nSCENE B — ONLY"
     end
 
     test "missing mode param behaves as mode=latest", %{
@@ -191,7 +194,8 @@ defmodule StoryboxWeb.ScriptViewTest do
       assert body["resolved"] == true
       assert body["story_script_view_version_id"] == ssvv_v1.id
       # v1 pins the older chain, so snapshot mode yields DRAFT, not REVISED
-      assert body["content"] == "SCENE A — DRAFT\n\nSCENE B — ONLY"
+      assert body["content"] ==
+               "EXT. SCENE A - NIGHT\n\nSCENE A — DRAFT\n\n.scene-b\n\nSCENE B — ONLY"
     end
 
     test "unknown snapshot_id returns 404", %{conn: conn, story: story, raw_token: raw_token} do
@@ -311,6 +315,11 @@ defmodule StoryboxWeb.ScriptViewTest do
       assert body["mode"] == "latest"
       assert body["story_script_view_version_id"]
       assert is_binary(body["content"]) and body["content"] != ""
+
+      # The composed heading is sourced from the Scene's slugline and surfaced in
+      # the content; the seed file's title-page block is stripped on load.
+      assert body["content"] =~ "EXT. CORONATION SQUARE - NIGHT"
+      refute body["content"] =~ "Source: V5"
 
       # The "reckoning" sequence has one null-pin Segment in the seed data,
       # so the assembly is not fully resolved and the gap is reported.
