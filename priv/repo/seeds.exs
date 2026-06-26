@@ -37,20 +37,17 @@ stories = [
     logline:
       "A girl trained only in healing opens the Book of Demons to find out if she is the Chosen One — and sets in motion a chain of manipulation that will burn the capital and strip away every illusion she has ever held.",
     controlling_idea:
-      "True power is earned through hard work. There are no shortcuts. There is no gift.",
-    through_lines: ["preference", "theme"]
+      "True power is earned through hard work. There are no shortcuts. There is no gift."
   },
   %{
     title: "Beneath the Surface",
     logline: nil,
-    controlling_idea: nil,
-    through_lines: ["preference"]
+    controlling_idea: nil
   },
   %{
     title: "Echo Chamber",
     logline: "In a world of perfect information, one woman discovers the truth is still hidden.",
-    controlling_idea: nil,
-    through_lines: ["preference"]
+    controlling_idea: nil
   }
 ]
 

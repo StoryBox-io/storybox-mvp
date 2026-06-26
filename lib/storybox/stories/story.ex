@@ -14,7 +14,6 @@ defmodule Storybox.Stories.Story do
     attribute :title, :string, allow_nil?: false, public?: true
     attribute :logline, :string, allow_nil?: true, public?: true
     attribute :controlling_idea, :string, allow_nil?: true, public?: true
-    attribute :through_lines, {:array, :string}, default: ["preference"], public?: true
 
     timestamps()
   end
@@ -43,12 +42,12 @@ defmodule Storybox.Stories.Story do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:title, :logline, :controlling_idea, :through_lines, :user_id]
+      accept [:title, :logline, :controlling_idea, :user_id]
       change Storybox.Stories.Changes.BootstrapStory
     end
 
     update :update do
-      accept [:title, :logline, :controlling_idea, :through_lines]
+      accept [:title, :logline, :controlling_idea]
     end
   end
 end

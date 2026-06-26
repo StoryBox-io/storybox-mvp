@@ -40,7 +40,6 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
         title: "The Grand Illusion",
         logline: "Two prisoners plan an impossible escape.",
         controlling_idea: "Freedom is won through solidarity.",
-        through_lines: ["preference", "theme"],
         user_id: alice.id
       })
       |> Ash.create()
@@ -208,13 +207,6 @@ defmodule StoryboxWeb.StoryOverviewLiveTest do
       {:ok, _view, html} = live(conn, "/stories/#{story.id}")
 
       assert html =~ "Freedom is won through solidarity."
-    end
-
-    test "renders the through lines joined by comma", %{conn: conn, alice: alice, story: story} do
-      conn = log_in_user(conn, alice)
-      {:ok, _view, html} = live(conn, "/stories/#{story.id}")
-
-      assert html =~ "preference, theme"
     end
   end
 
