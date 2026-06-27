@@ -46,41 +46,82 @@ defmodule StoryboxWeb.ApiController do
     json(conn, %{status: "ok", story_id: story_id})
   end
 
-  def synopsis_view(conn, _params) do
+  # An optional `?sequence_id=` filter scopes a view read to a single Sequence
+  # (region). A nil id is a pass-through (full read, unchanged). A non-nil id
+  # must address a Sequence belonging to this story; one that does not — or a
+  # malformed UUID, which Ash surfaces as `{:error, _}` — is reported as
+  # not-found so other regions never leak.
+  defp validate_sequence_for_story(_story, nil), do: {:ok, nil}
+
+  defp validate_sequence_for_story(story, sequence_id) do
+    case Storybox.Stories.Sequence
+         |> Ash.Query.filter(id == ^sequence_id and story_id == ^story.id)
+         |> Ash.read_one(authorize?: false) do
+      {:ok, nil} -> {:error, :sequence_not_found}
+      {:ok, _sequence} -> {:ok, sequence_id}
+      {:error, _} -> {:error, :sequence_not_found}
+    end
+  end
+
+  defp parse_and_validate_sequence(story, params) do
+    validate_sequence_for_story(story, Map.get(params, "sequence_id"))
+  end
+
+  # Restricts a layer's resolved Segments to one Sequence. nil is a pass-through.
+  # story_script_vv Segments carry `sequence_id` (written by the cut), so the
+  # script view can scope at this layer.
+  defp filter_segments_by_sequence(segments, nil), do: segments
+
+  defp filter_segments_by_sequence(segments, sequence_id) do
+    Enum.filter(segments, &(&1.sequence_id == sequence_id))
+  end
+
+  def synopsis_view(conn, params) do
     story = conn.assigns.current_story
 
-    synopsis_view =
-      Storybox.Stories.SynopsisView
-      |> Ash.Query.filter(story_id == ^story.id)
-      |> Ash.read_one(authorize?: false)
+    case parse_and_validate_sequence(story, params) do
+      {:error, :sequence_not_found} ->
+        conn |> put_status(404) |> json(%{error: "sequence not found"})
 
-    case synopsis_view do
-      {:ok, nil} ->
-        conn
-        |> put_status(404)
-        |> json(%{error: "no synopsis found"})
-
-      {:ok, view} ->
-        latest_vv =
-          Storybox.Stories.SynopsisViewVersion
-          |> Ash.Query.filter(synopsis_view_id == ^view.id)
-          |> Ash.Query.sort(version_number: :desc)
-          |> Ash.Query.limit(1)
+      {:ok, sequence_id} ->
+        synopsis_view =
+          Storybox.Stories.SynopsisView
+          |> Ash.Query.filter(story_id == ^story.id)
           |> Ash.read_one(authorize?: false)
 
-        case latest_vv do
+        case synopsis_view do
           {:ok, nil} ->
             conn
             |> put_status(404)
             |> json(%{error: "no synopsis found"})
 
-          {:ok, vv} ->
-            case assemble_synopsis_view(story, view, vv) do
-              {:error, :content_unavailable} ->
-                conn |> put_status(503) |> json(%{error: "content unavailable"})
+          {:ok, view} ->
+            latest_vv =
+              Storybox.Stories.SynopsisViewVersion
+              |> Ash.Query.filter(synopsis_view_id == ^view.id)
+              |> Ash.Query.sort(version_number: :desc)
+              |> Ash.Query.limit(1)
+              |> Ash.read_one(authorize?: false)
 
-              {:ok, response} ->
-                json(conn, response)
+            case latest_vv do
+              {:ok, nil} ->
+                conn
+                |> put_status(404)
+                |> json(%{error: "no synopsis found"})
+
+              {:ok, vv} ->
+                case assemble_synopsis_view(story, view, vv, sequence_id) do
+                  {:error, :content_unavailable} ->
+                    conn |> put_status(503) |> json(%{error: "content unavailable"})
+
+                  {:ok, response} ->
+                    json(conn, response)
+                end
+
+              {:error, _} ->
+                conn
+                |> put_status(500)
+                |> json(%{error: "internal error"})
             end
 
           {:error, _} ->
@@ -88,11 +129,6 @@ defmodule StoryboxWeb.ApiController do
             |> put_status(500)
             |> json(%{error: "internal error"})
         end
-
-      {:error, _} ->
-        conn
-        |> put_status(500)
-        |> json(%{error: "internal error"})
     end
   end
 
@@ -102,7 +138,7 @@ defmodule StoryboxWeb.ApiController do
   # sequence is no longer on the spine are skipped (orchestrator R2); an empty
   # spine yields no paragraphs (orchestrator R3). Null-pin segments are recorded
   # in `unresolvable`; a storage failure surfaces as `{:error, :content_unavailable}`.
-  defp assemble_synopsis_view(story, view, vv) do
+  defp assemble_synopsis_view(story, view, vv, sequence_id) do
     synopsis_vv_type = :synopsis_vv
 
     segments =
@@ -112,7 +148,10 @@ defmodule StoryboxWeb.ApiController do
 
     seg_by_seq = Map.new(segments, fn seg -> {seg.sequence_id, seg} end)
 
-    spine_order = Storybox.Stories.StorySpine.sequence_ids_in_order(story.id)
+    spine_order =
+      if sequence_id,
+        do: [sequence_id],
+        else: Storybox.Stories.StorySpine.sequence_ids_in_order(story.id)
 
     result =
       Enum.reduce_while(spine_order, {:ok, [], []}, fn seq_id, {:ok, paras, unres} ->
@@ -166,41 +205,52 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  def treatment_view(conn, _params) do
+  def treatment_view(conn, params) do
     story = conn.assigns.current_story
 
-    treatment_view =
-      Storybox.Stories.TreatmentView
-      |> Ash.Query.filter(story_id == ^story.id)
-      |> Ash.read_one(authorize?: false)
+    case parse_and_validate_sequence(story, params) do
+      {:error, :sequence_not_found} ->
+        conn |> put_status(404) |> json(%{error: "sequence not found"})
 
-    case treatment_view do
-      {:ok, nil} ->
-        conn
-        |> put_status(404)
-        |> json(%{error: "no treatment found"})
-
-      {:ok, view} ->
-        latest_vv =
-          Storybox.Stories.TreatmentViewVersion
-          |> Ash.Query.filter(treatment_view_id == ^view.id)
-          |> Ash.Query.sort(version_number: :desc)
-          |> Ash.Query.limit(1)
+      {:ok, sequence_id} ->
+        treatment_view =
+          Storybox.Stories.TreatmentView
+          |> Ash.Query.filter(story_id == ^story.id)
           |> Ash.read_one(authorize?: false)
 
-        case latest_vv do
+        case treatment_view do
           {:ok, nil} ->
             conn
             |> put_status(404)
             |> json(%{error: "no treatment found"})
 
-          {:ok, vv} ->
-            case assemble_treatment_view(story, view, vv) do
-              {:error, :content_unavailable} ->
-                conn |> put_status(503) |> json(%{error: "content unavailable"})
+          {:ok, view} ->
+            latest_vv =
+              Storybox.Stories.TreatmentViewVersion
+              |> Ash.Query.filter(treatment_view_id == ^view.id)
+              |> Ash.Query.sort(version_number: :desc)
+              |> Ash.Query.limit(1)
+              |> Ash.read_one(authorize?: false)
 
-              {:ok, response} ->
-                json(conn, response)
+            case latest_vv do
+              {:ok, nil} ->
+                conn
+                |> put_status(404)
+                |> json(%{error: "no treatment found"})
+
+              {:ok, vv} ->
+                case assemble_treatment_view(story, view, vv, sequence_id) do
+                  {:error, :content_unavailable} ->
+                    conn |> put_status(503) |> json(%{error: "content unavailable"})
+
+                  {:ok, response} ->
+                    json(conn, response)
+                end
+
+              {:error, _} ->
+                conn
+                |> put_status(500)
+                |> json(%{error: "internal error"})
             end
 
           {:error, _} ->
@@ -208,11 +258,6 @@ defmodule StoryboxWeb.ApiController do
             |> put_status(500)
             |> json(%{error: "internal error"})
         end
-
-      {:error, _} ->
-        conn
-        |> put_status(500)
-        |> json(%{error: "internal error"})
     end
   end
 
@@ -222,7 +267,7 @@ defmodule StoryboxWeb.ApiController do
   # sequence is no longer on the spine are skipped (orchestrator R2); an empty
   # spine yields no paragraphs (orchestrator R3). Null-pin segments are recorded
   # in `unresolvable`; a storage failure surfaces as `{:error, :content_unavailable}`.
-  defp assemble_treatment_view(story, view, vv) do
+  defp assemble_treatment_view(story, view, vv, sequence_id) do
     treatment_vv_type = :treatment_vv
 
     segments =
@@ -232,7 +277,10 @@ defmodule StoryboxWeb.ApiController do
 
     seg_by_seq = Map.new(segments, fn seg -> {seg.sequence_id, seg} end)
 
-    spine_order = Storybox.Stories.StorySpine.sequence_ids_in_order(story.id)
+    spine_order =
+      if sequence_id,
+        do: [sequence_id],
+        else: Storybox.Stories.StorySpine.sequence_ids_in_order(story.id)
 
     result =
       Enum.reduce_while(spine_order, {:ok, [], []}, fn seq_id, {:ok, paras, unres} ->
@@ -411,18 +459,23 @@ defmodule StoryboxWeb.ApiController do
     story = conn.assigns.current_story
 
     with {:ok, format} <- parse_script_view_format(params),
-         {:ok, mode, snapshot_id} <- parse_script_view_mode(params) do
+         {:ok, mode, snapshot_id} <- parse_script_view_mode(params),
+         {:ok, sequence_id} <- parse_and_validate_sequence(story, params) do
       case format do
-        "json" -> respond_json_script_view(conn, story, mode, snapshot_id)
-        "fountain" -> respond_fountain_script_view(conn, story, mode, snapshot_id)
+        "json" -> respond_json_script_view(conn, story, mode, snapshot_id, sequence_id)
+        "fountain" -> respond_fountain_script_view(conn, story, mode, snapshot_id, sequence_id)
       end
     else
-      {:error, reason} -> conn |> put_status(400) |> json(%{error: reason})
+      {:error, :sequence_not_found} ->
+        conn |> put_status(404) |> json(%{error: "sequence not found"})
+
+      {:error, reason} ->
+        conn |> put_status(400) |> json(%{error: reason})
     end
   end
 
-  defp respond_json_script_view(conn, story, mode, snapshot_id) do
-    case assemble_script_view(story, mode, snapshot_id) do
+  defp respond_json_script_view(conn, story, mode, snapshot_id, sequence_id) do
+    case assemble_script_view(story, mode, snapshot_id, sequence_id) do
       {:error, :snapshot_not_found} ->
         conn |> put_status(404) |> json(%{error: "snapshot not found"})
 
@@ -439,8 +492,8 @@ defmodule StoryboxWeb.ApiController do
   # `send_chunked` commits the 200. A storage failure therefore still
   # surfaces as a clean 503 JSON, identical to the JSON path; chunking is
   # only a delivery detail over already-resolved content (orchestrator Q2).
-  defp respond_fountain_script_view(conn, story, mode, snapshot_id) do
-    case assemble_fountain_script_view(story, mode, snapshot_id) do
+  defp respond_fountain_script_view(conn, story, mode, snapshot_id, sequence_id) do
+    case assemble_fountain_script_view(story, mode, snapshot_id, sequence_id) do
       {:error, :snapshot_not_found} ->
         conn |> put_status(404) |> json(%{error: "snapshot not found"})
 
@@ -484,11 +537,11 @@ defmodule StoryboxWeb.ApiController do
 
   # `mode=approved` is a stub: no approval has been recorded, so there is no
   # StoryScriptViewVersion to traverse (issue #76, orchestrator Q2).
-  defp assemble_script_view(_story, "approved", _snapshot_id) do
+  defp assemble_script_view(_story, "approved", _snapshot_id, _sequence_id) do
     {:ok, empty_script_view("approved", nil)}
   end
 
-  defp assemble_script_view(story, mode, snapshot_id) do
+  defp assemble_script_view(story, mode, snapshot_id, sequence_id) do
     story_script_view =
       Storybox.Stories.StoryScriptView
       |> Ash.Query.filter(story_id == ^story.id)
@@ -502,7 +555,7 @@ defmodule StoryboxWeb.ApiController do
         {:ok, empty_script_view(mode, nil)}
 
       {:ok, ssvv} ->
-        case traverse_and_build(mode, ssvv) do
+        case traverse_and_build(mode, ssvv, sequence_id) do
           {:error, reason} ->
             {:error, reason}
 
@@ -563,10 +616,11 @@ defmodule StoryboxWeb.ApiController do
   # Returns `{:ok, joined_content, unresolvable}` or `{:error, :content_unavailable}`.
   # Null-pin Segments at any layer are recorded in `unresolvable` and never
   # silently skipped.
-  defp traverse_and_build(mode, ssvv) do
+  defp traverse_and_build(mode, ssvv, sequence_id) do
     {sequence_vvs, unresolvable} =
       ssvv.id
       |> load_segments(:story_script_vv)
+      |> filter_segments_by_sequence(sequence_id)
       |> resolve_layer(mode, nil, [], fn seg, _parent ->
         %{layer: "story_script", position: seg.position}
       end)
@@ -690,9 +744,10 @@ defmodule StoryboxWeb.ApiController do
   # `{:ok, slots}` where each slot is `{:content, fountain_text}` or
   # `{:unresolved, label}`, in document order — or an `{:error, _}` tuple
   # that the caller renders as JSON before any chunking begins.
-  defp assemble_fountain_script_view(_story, "approved", _snapshot_id), do: {:ok, []}
+  defp assemble_fountain_script_view(_story, "approved", _snapshot_id, _sequence_id),
+    do: {:ok, []}
 
-  defp assemble_fountain_script_view(story, mode, snapshot_id) do
+  defp assemble_fountain_script_view(story, mode, snapshot_id, sequence_id) do
     story_script_view =
       Storybox.Stories.StoryScriptView
       |> Ash.Query.filter(story_id == ^story.id)
@@ -701,7 +756,7 @@ defmodule StoryboxWeb.ApiController do
     case resolve_story_script_vv(mode, snapshot_id, story_script_view) do
       {:error, reason} -> {:error, reason}
       {:ok, nil} -> {:ok, []}
-      {:ok, ssvv} -> resolve_slot_content(traverse_fountain_slots(mode, ssvv))
+      {:ok, ssvv} -> resolve_slot_content(traverse_fountain_slots(mode, ssvv, sequence_id))
     end
   end
 
@@ -711,9 +766,10 @@ defmodule StoryboxWeb.ApiController do
   # layer that failed: `sequence-N` at the story_script layer, `scene-position-N`
   # at the sequence layer, and the real Scene slug at the script layer
   # (orchestrator Q1).
-  defp traverse_fountain_slots(mode, ssvv) do
+  defp traverse_fountain_slots(mode, ssvv, sequence_id) do
     ssvv.id
     |> load_segments(:story_script_vv)
+    |> filter_segments_by_sequence(sequence_id)
     |> Enum.flat_map(fn seq_seg ->
       case resolve_segment(mode, seq_seg) do
         nil ->
