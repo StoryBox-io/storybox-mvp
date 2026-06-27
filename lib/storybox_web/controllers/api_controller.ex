@@ -79,56 +79,76 @@ defmodule StoryboxWeb.ApiController do
   def synopsis_view(conn, params) do
     story = conn.assigns.current_story
 
-    case parse_and_validate_sequence(story, params) do
+    with {:ok, format} <- parse_view_format(params),
+         {:ok, sequence_id} <- parse_and_validate_sequence(story, params) do
+      synopsis_view =
+        Storybox.Stories.SynopsisView
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.read_one(authorize?: false)
+
+      case synopsis_view do
+        {:ok, nil} ->
+          conn
+          |> put_status(404)
+          |> json(%{error: "no synopsis found"})
+
+        {:ok, view} ->
+          latest_vv =
+            Storybox.Stories.SynopsisViewVersion
+            |> Ash.Query.filter(synopsis_view_id == ^view.id)
+            |> Ash.Query.sort(version_number: :desc)
+            |> Ash.Query.limit(1)
+            |> Ash.read_one(authorize?: false)
+
+          case latest_vv do
+            {:ok, nil} ->
+              conn
+              |> put_status(404)
+              |> json(%{error: "no synopsis found"})
+
+            {:ok, vv} ->
+              respond_synopsis_view(conn, format, story, view, vv, sequence_id)
+
+            {:error, _} ->
+              conn
+              |> put_status(500)
+              |> json(%{error: "internal error"})
+          end
+
+        {:error, _} ->
+          conn
+          |> put_status(500)
+          |> json(%{error: "internal error"})
+      end
+    else
       {:error, :sequence_not_found} ->
         conn |> put_status(404) |> json(%{error: "sequence not found"})
 
-      {:ok, sequence_id} ->
-        synopsis_view =
-          Storybox.Stories.SynopsisView
-          |> Ash.Query.filter(story_id == ^story.id)
-          |> Ash.read_one(authorize?: false)
+      {:error, reason} ->
+        conn |> put_status(400) |> json(%{error: reason})
+    end
+  end
 
-        case synopsis_view do
-          {:ok, nil} ->
-            conn
-            |> put_status(404)
-            |> json(%{error: "no synopsis found"})
+  defp respond_synopsis_view(conn, "json", story, view, vv, sequence_id) do
+    case assemble_synopsis_view(story, view, vv, sequence_id) do
+      {:error, :content_unavailable} ->
+        conn |> put_status(503) |> json(%{error: "content unavailable"})
 
-          {:ok, view} ->
-            latest_vv =
-              Storybox.Stories.SynopsisViewVersion
-              |> Ash.Query.filter(synopsis_view_id == ^view.id)
-              |> Ash.Query.sort(version_number: :desc)
-              |> Ash.Query.limit(1)
-              |> Ash.read_one(authorize?: false)
+      {:ok, response} ->
+        json(conn, response)
+    end
+  end
 
-            case latest_vv do
-              {:ok, nil} ->
-                conn
-                |> put_status(404)
-                |> json(%{error: "no synopsis found"})
+  # Resolve-then-stream, mirroring the script fountain path: the full slot list
+  # is assembled and all content fetched into memory *before* `send_chunked`
+  # commits the 200, so a storage failure still surfaces as a clean 503 JSON.
+  defp respond_synopsis_view(conn, "fountain", story, view, vv, sequence_id) do
+    case assemble_fountain_synopsis_view(story, view, vv, sequence_id) do
+      {:error, :content_unavailable} ->
+        conn |> put_status(503) |> json(%{error: "content unavailable"})
 
-              {:ok, vv} ->
-                case assemble_synopsis_view(story, view, vv, sequence_id) do
-                  {:error, :content_unavailable} ->
-                    conn |> put_status(503) |> json(%{error: "content unavailable"})
-
-                  {:ok, response} ->
-                    json(conn, response)
-                end
-
-              {:error, _} ->
-                conn
-                |> put_status(500)
-                |> json(%{error: "internal error"})
-            end
-
-          {:error, _} ->
-            conn
-            |> put_status(500)
-            |> json(%{error: "internal error"})
-        end
+      {:ok, slots} ->
+        stream_fountain(conn, slots)
     end
   end
 
@@ -205,59 +225,118 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  # Fountain counterpart of `assemble_synopsis_view/4`: walks the same live
+  # spine order but accumulates a single ordered slot list (rather than parallel
+  # paragraph/unresolvable lists) so `stream_fountain/2` can interleave resolved
+  # paragraphs and null-pin holes in document order. A null pin becomes
+  # `{:unresolved, "sequence-<id>"}`; a storage failure halts with
+  # `{:error, :content_unavailable}` so the caller can still send a 503 JSON.
+  defp assemble_fountain_synopsis_view(story, _view, vv, sequence_id) do
+    synopsis_vv_type = :synopsis_vv
+
+    segments =
+      Storybox.Stories.Segment
+      |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == ^synopsis_vv_type)
+      |> Ash.read!(authorize?: false)
+
+    seg_by_seq = Map.new(segments, fn seg -> {seg.sequence_id, seg} end)
+
+    spine_order =
+      if sequence_id,
+        do: [sequence_id],
+        else: Storybox.Stories.StorySpine.sequence_ids_in_order(story.id)
+
+    Enum.reduce_while(spine_order, {:ok, []}, fn seq_id, {:ok, slots} ->
+      case Map.get(seg_by_seq, seq_id) do
+        nil ->
+          # Sequence on the spine but not in this VV (cut before it existed) — skip.
+          {:cont, {:ok, slots}}
+
+        %{pin_id: nil} ->
+          {:cont, {:ok, slots ++ [{:unresolved, "sequence-#{seq_id}"}]}}
+
+        seg ->
+          case fetch_synopsis_piece_content(seg.pin_id) do
+            {:ok, content} -> {:cont, {:ok, slots ++ [{:content, content}]}}
+            {:error, :content_unavailable} -> {:halt, {:error, :content_unavailable}}
+          end
+      end
+    end)
+  end
+
   def treatment_view(conn, params) do
     story = conn.assigns.current_story
 
-    case parse_and_validate_sequence(story, params) do
+    with {:ok, format} <- parse_view_format(params),
+         {:ok, sequence_id} <- parse_and_validate_sequence(story, params) do
+      treatment_view =
+        Storybox.Stories.TreatmentView
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.read_one(authorize?: false)
+
+      case treatment_view do
+        {:ok, nil} ->
+          conn
+          |> put_status(404)
+          |> json(%{error: "no treatment found"})
+
+        {:ok, view} ->
+          latest_vv =
+            Storybox.Stories.TreatmentViewVersion
+            |> Ash.Query.filter(treatment_view_id == ^view.id)
+            |> Ash.Query.sort(version_number: :desc)
+            |> Ash.Query.limit(1)
+            |> Ash.read_one(authorize?: false)
+
+          case latest_vv do
+            {:ok, nil} ->
+              conn
+              |> put_status(404)
+              |> json(%{error: "no treatment found"})
+
+            {:ok, vv} ->
+              respond_treatment_view(conn, format, story, view, vv, sequence_id)
+
+            {:error, _} ->
+              conn
+              |> put_status(500)
+              |> json(%{error: "internal error"})
+          end
+
+        {:error, _} ->
+          conn
+          |> put_status(500)
+          |> json(%{error: "internal error"})
+      end
+    else
       {:error, :sequence_not_found} ->
         conn |> put_status(404) |> json(%{error: "sequence not found"})
 
-      {:ok, sequence_id} ->
-        treatment_view =
-          Storybox.Stories.TreatmentView
-          |> Ash.Query.filter(story_id == ^story.id)
-          |> Ash.read_one(authorize?: false)
+      {:error, reason} ->
+        conn |> put_status(400) |> json(%{error: reason})
+    end
+  end
 
-        case treatment_view do
-          {:ok, nil} ->
-            conn
-            |> put_status(404)
-            |> json(%{error: "no treatment found"})
+  defp respond_treatment_view(conn, "json", story, view, vv, sequence_id) do
+    case assemble_treatment_view(story, view, vv, sequence_id) do
+      {:error, :content_unavailable} ->
+        conn |> put_status(503) |> json(%{error: "content unavailable"})
 
-          {:ok, view} ->
-            latest_vv =
-              Storybox.Stories.TreatmentViewVersion
-              |> Ash.Query.filter(treatment_view_id == ^view.id)
-              |> Ash.Query.sort(version_number: :desc)
-              |> Ash.Query.limit(1)
-              |> Ash.read_one(authorize?: false)
+      {:ok, response} ->
+        json(conn, response)
+    end
+  end
 
-            case latest_vv do
-              {:ok, nil} ->
-                conn
-                |> put_status(404)
-                |> json(%{error: "no treatment found"})
+  # Resolve-then-stream, mirroring the script fountain path: a storage failure
+  # still surfaces as a clean 503 JSON because all content is fetched before
+  # `send_chunked` commits the 200.
+  defp respond_treatment_view(conn, "fountain", story, view, vv, sequence_id) do
+    case assemble_fountain_treatment_view(story, view, vv, sequence_id) do
+      {:error, :content_unavailable} ->
+        conn |> put_status(503) |> json(%{error: "content unavailable"})
 
-              {:ok, vv} ->
-                case assemble_treatment_view(story, view, vv, sequence_id) do
-                  {:error, :content_unavailable} ->
-                    conn |> put_status(503) |> json(%{error: "content unavailable"})
-
-                  {:ok, response} ->
-                    json(conn, response)
-                end
-
-              {:error, _} ->
-                conn
-                |> put_status(500)
-                |> json(%{error: "internal error"})
-            end
-
-          {:error, _} ->
-            conn
-            |> put_status(500)
-            |> json(%{error: "internal error"})
-        end
+      {:ok, slots} ->
+        stream_fountain(conn, slots)
     end
   end
 
@@ -332,6 +411,42 @@ defmodule StoryboxWeb.ApiController do
       {:ok, content} -> {:ok, content}
       {:error, _} -> {:error, :content_unavailable}
     end
+  end
+
+  # Fountain counterpart of `assemble_treatment_view/4`: same single-slot-list
+  # accumulation in live spine order as the synopsis fountain path, using
+  # `fetch_sequence_piece_content/1` and the `:treatment_vv` segment type.
+  defp assemble_fountain_treatment_view(story, _view, vv, sequence_id) do
+    treatment_vv_type = :treatment_vv
+
+    segments =
+      Storybox.Stories.Segment
+      |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == ^treatment_vv_type)
+      |> Ash.read!(authorize?: false)
+
+    seg_by_seq = Map.new(segments, fn seg -> {seg.sequence_id, seg} end)
+
+    spine_order =
+      if sequence_id,
+        do: [sequence_id],
+        else: Storybox.Stories.StorySpine.sequence_ids_in_order(story.id)
+
+    Enum.reduce_while(spine_order, {:ok, []}, fn seq_id, {:ok, slots} ->
+      case Map.get(seg_by_seq, seq_id) do
+        nil ->
+          # Sequence on the spine but not in this VV (cut before it existed) — skip.
+          {:cont, {:ok, slots}}
+
+        %{pin_id: nil} ->
+          {:cont, {:ok, slots ++ [{:unresolved, "sequence-#{seq_id}"}]}}
+
+        seg ->
+          case fetch_sequence_piece_content(seg.pin_id) do
+            {:ok, content} -> {:cont, {:ok, slots ++ [{:content, content}]}}
+            {:error, :content_unavailable} -> {:halt, {:error, :content_unavailable}}
+          end
+      end
+    end)
   end
 
   def throughline_view(conn, _params) do
@@ -458,7 +573,7 @@ defmodule StoryboxWeb.ApiController do
   def script_view(conn, params) do
     story = conn.assigns.current_story
 
-    with {:ok, format} <- parse_script_view_format(params),
+    with {:ok, format} <- parse_view_format(params),
          {:ok, mode, snapshot_id} <- parse_script_view_mode(params),
          {:ok, sequence_id} <- parse_and_validate_sequence(story, params) do
       case format do
@@ -507,7 +622,8 @@ defmodule StoryboxWeb.ApiController do
 
   # `?format=` is optional and defaults to "json". Only "json" and
   # "fountain" are accepted — anything else is a 400 (orchestrator Q4).
-  defp parse_script_view_format(params) do
+  # Shared by the script, synopsis, and treatment reads.
+  defp parse_view_format(params) do
     case Map.get(params, "format", "json") do
       format when format in ["json", "fountain"] -> {:ok, format}
       _ -> {:error, "format must be json or fountain"}

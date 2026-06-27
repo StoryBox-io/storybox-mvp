@@ -412,4 +412,115 @@ defmodule StoryboxWeb.SynopsisViewTest do
       assert json_response(conn, 404)["error"] == "sequence not found"
     end
   end
+
+  describe "GET /api/stories/:story_id/views/synopsis — ?format=fountain" do
+    setup %{story: story} do
+      seq_a = create_sequence(story, "Act One", "act-one")
+      seq_b = create_sequence(story, "Act Two", "act-two")
+      %{seq_a: seq_a, seq_b: seq_b}
+    end
+
+    test "streams resolved paragraphs as a chunked text/plain document", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token,
+      seq_a: seq_a,
+      seq_b: seq_b
+    } do
+      create_synopsis_piece(story, seq_a, "Act one synopsis.")
+      create_synopsis_piece(story, seq_b, "Act two synopsis.")
+      cut_synopsis(story)
+
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis?format=fountain")
+
+      body = response(conn, 200)
+
+      assert get_resp_header(conn, "content-type") == ["text/plain; charset=utf-8"]
+      assert body == "Act one synopsis.\n\nAct two synopsis.\n\n"
+    end
+
+    test "a nil-pin segment emits an inline unresolved marker in document order", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token,
+      seq_a: seq_a,
+      seq_b: seq_b
+    } do
+      # seq_a has a piece; seq_b has none → a nil-pin segment in the cut VV.
+      create_synopsis_piece(story, seq_a, "Act one synopsis.")
+      cut_synopsis(story)
+
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis?format=fountain")
+
+      body = response(conn, 200)
+
+      assert body =~ "Act one synopsis."
+      assert body =~ "/* unresolved: sequence-#{seq_b.id} */"
+      assert body =~ "/* UNRESOLVED SCENES:\n  - sequence-#{seq_b.id}\n*/"
+    end
+
+    test "returns 503 JSON when a pinned piece's content is unavailable", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token,
+      seq_a: seq_a
+    } do
+      {:ok, _bad_piece} =
+        Storybox.Stories.SynopsisPiece
+        |> Ash.Changeset.for_create(:create, %{
+          story_id: story.id,
+          sequence_id: seq_a.id,
+          content_uri: "storybox://synopsis/#{seq_a.id}/v999_missing.md",
+          version_number: 999
+        })
+        |> Ash.create(authorize?: false)
+
+      cut_synopsis(story)
+
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis?format=fountain")
+
+      assert json_response(conn, 503)["error"] == "content unavailable"
+    end
+
+    test "an unrecognised format value returns 400 JSON", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token
+    } do
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis?format=xml")
+
+      assert json_response(conn, 400)["error"] == "format must be json or fountain"
+    end
+
+    test "?format=fountain&sequence_id scopes the stream to that single sequence", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token,
+      seq_a: seq_a,
+      seq_b: seq_b
+    } do
+      create_synopsis_piece(story, seq_a, "Act one synopsis.")
+      create_synopsis_piece(story, seq_b, "Act two synopsis.")
+      cut_synopsis(story)
+
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis?format=fountain&sequence_id=#{seq_a.id}")
+
+      assert response(conn, 200) == "Act one synopsis.\n\n"
+    end
+  end
 end
