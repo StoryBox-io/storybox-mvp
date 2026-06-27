@@ -11,7 +11,6 @@ defmodule Storybox.Stories.Scene do
   attributes do
     uuid_primary_key :id
 
-    attribute :motif, :string, allow_nil?: true, public?: true
     attribute :slug, :string, allow_nil?: false, public?: true
     attribute :slugline, :string, allow_nil?: true, public?: true
 
@@ -32,14 +31,14 @@ defmodule Storybox.Stories.Scene do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:motif, :slug, :slugline, :story_id]
+      accept [:slug, :slugline, :story_id]
 
       change Storybox.Stories.Changes.GenerateSceneSlug
       change Storybox.Stories.Changes.WarnCharacterSlugCollision
     end
 
     update :update do
-      accept [:motif, :slug, :slugline]
+      accept [:slug, :slugline]
 
       # The collision warning runs as an after_action hook, which cannot be
       # expressed atomically; the warning is non-fatal so this is safe.

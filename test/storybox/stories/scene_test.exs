@@ -30,35 +30,32 @@ defmodule Storybox.Stories.SceneTest do
   end
 
   describe "create" do
-    test "auto-generates slug from motif when slug omitted", %{story: story} do
+    test "auto-generates slug from slugline when slug omitted", %{story: story} do
       assert {:ok, scene} =
-               create_scene(%{motif: "a heated argument leads to chaos", story_id: story.id})
+               create_scene(%{slugline: "EXT. CATHEDRAL - NIGHT", story_id: story.id})
 
-      assert scene.motif == "a heated argument leads to chaos"
-      assert scene.slug == "a-heated-argument-leads-to-chaos"
+      assert scene.slug == Slug.slugify("EXT. CATHEDRAL - NIGHT", separator: "_")
       assert scene.story_id == story.id
     end
 
-    test "explicit slug wins over motif", %{story: story} do
+    test "explicit slug wins over slugline", %{story: story} do
       assert {:ok, scene} =
                create_scene(%{
-                 motif: "a heated argument leads to chaos",
+                 slugline: "EXT. CATHEDRAL - NIGHT",
                  slug: "the-argument",
                  story_id: story.id
                })
 
       assert scene.slug == "the-argument"
-      assert scene.motif == "a heated argument leads to chaos"
     end
 
-    test "creates with explicit slug and no motif", %{story: story} do
+    test "creates with explicit slug and no slugline", %{story: story} do
       assert {:ok, scene} = create_scene(%{slug: "opening", story_id: story.id})
 
       assert scene.slug == "opening"
-      assert is_nil(scene.motif)
     end
 
-    test "fails without slug or motif", %{story: story} do
+    test "fails without slug or slugline", %{story: story} do
       assert {:error, %Ash.Error.Invalid{}} = create_scene(%{story_id: story.id})
     end
 
@@ -123,15 +120,14 @@ defmodule Storybox.Stories.SceneTest do
   end
 
   describe "update" do
-    test "updates motif and slug", %{story: story} do
+    test "updates slug", %{story: story} do
       {:ok, scene} = create_scene(%{slug: "original", story_id: story.id})
 
       assert {:ok, updated} =
                scene
-               |> Ash.Changeset.for_update(:update, %{motif: "a revised motif", slug: "revised"})
+               |> Ash.Changeset.for_update(:update, %{slug: "revised"})
                |> Ash.update()
 
-      assert updated.motif == "a revised motif"
       assert updated.slug == "revised"
     end
 

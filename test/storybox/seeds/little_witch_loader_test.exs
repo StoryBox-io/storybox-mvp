@@ -147,7 +147,7 @@ defmodule Storybox.Seeds.LittleWitchLoaderTest do
                |> Ash.count!(authorize?: false)
     end
 
-    test "all scenes have a directory-name slug and an authored motif", %{story: story} do
+    test "all scenes have a directory-name slug", %{story: story} do
       Storybox.Seeds.LittleWitchLoader.seed!(story)
 
       scenes =
@@ -167,11 +167,6 @@ defmodule Storybox.Seeds.LittleWitchLoaderTest do
         ])
 
       assert MapSet.new(scenes, & &1.slug) == expected_slugs
-
-      for scene <- scenes do
-        assert is_binary(scene.motif) and scene.motif != "",
-               "Scene #{inspect(scene.slug)} has no authored motif"
-      end
     end
 
     test "each scene's slugline is peeled to the Scene and the body stays heading-free",
