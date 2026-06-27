@@ -9,6 +9,8 @@ defmodule Storybox.Stories.TaskGeneration do
     ScriptView,
     ScriptViewVersion,
     Segment,
+    StoryScriptView,
+    StoryScriptViewVersion,
     SynopsisView,
     SynopsisViewVersion,
     Task,
@@ -86,6 +88,92 @@ defmodule Storybox.Stories.TaskGeneration do
             throughline_vv_id,
             "throughline_vv",
             throughline_vv.version_number,
+            story_id
+          )
+        end
+      end)
+    end
+
+    :ok
+  end
+
+  @doc """
+  Called after a Synopsis VV :cut. Synopsis is the rougher on-spine layer above
+  treatment: any Synopsis re-cut flags every existing TreatmentViewVersion that
+  now reads cross-layer-stale, generating a :review task per stale VV (deduped by
+  target VV). Review-all — no topology pruning.
+  """
+  def after_synopsis_vv_cut(synopsis_vv_id, story_id) do
+    synopsis_vv =
+      SynopsisViewVersion
+      |> Ash.Query.filter(id == ^synopsis_vv_id)
+      |> Ash.read_one!(authorize?: false)
+
+    treatment_view =
+      TreatmentView
+      |> Ash.Query.filter(story_id == ^story_id)
+      |> Ash.read_one!(authorize?: false)
+
+    if treatment_view && synopsis_vv do
+      tvvs =
+        TreatmentViewVersion
+        |> Ash.Query.filter(treatment_view_id == ^treatment_view.id)
+        |> Ash.read!(authorize?: false)
+
+      Enum.each(tvvs, fn tvv ->
+        if Staleness.view_version_stale?(tvv.id, :treatment_vv) do
+          maybe_create_review_task(
+            tvv.id,
+            treatment_view.id,
+            "treatment_vv",
+            :story,
+            story_id,
+            synopsis_vv_id,
+            "synopsis_vv",
+            synopsis_vv.version_number,
+            story_id
+          )
+        end
+      end)
+    end
+
+    :ok
+  end
+
+  @doc """
+  Called after a Treatment VV :cut. Treatment is the rougher on-spine layer above
+  the story script: any Treatment re-cut flags every existing
+  StoryScriptViewVersion that now reads cross-layer-stale, generating a :review
+  task per stale VV (deduped by target VV). Review-all — no topology pruning.
+  """
+  def after_treatment_vv_cut(treatment_vv_id, story_id) do
+    treatment_vv =
+      TreatmentViewVersion
+      |> Ash.Query.filter(id == ^treatment_vv_id)
+      |> Ash.read_one!(authorize?: false)
+
+    story_script_view =
+      StoryScriptView
+      |> Ash.Query.filter(story_id == ^story_id)
+      |> Ash.read_one!(authorize?: false)
+
+    if story_script_view && treatment_vv do
+      ssvvs =
+        StoryScriptViewVersion
+        |> Ash.Query.filter(story_script_view_id == ^story_script_view.id)
+        |> Ash.read!(authorize?: false)
+
+      Enum.each(ssvvs, fn ssvv ->
+        if Staleness.view_version_stale?(ssvv.id, :story_script_vv) do
+          maybe_create_review_task(
+            ssvv.id,
+            story_script_view.id,
+            "story_script_vv",
+            :story,
+            story_id,
+            treatment_vv_id,
+            "treatment_vv",
+            treatment_vv.version_number,
             story_id
           )
         end

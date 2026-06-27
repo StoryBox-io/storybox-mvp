@@ -45,6 +45,16 @@ defmodule Storybox.Stories.Staleness do
       throughline_harness_stale?(view_version_id)
   end
 
+  def view_version_stale?(view_version_id, :treatment_vv) do
+    stale_segments?(view_version_id, :treatment_vv) or
+      synopsis_harness_stale?(view_version_id)
+  end
+
+  def view_version_stale?(view_version_id, :story_script_vv) do
+    stale_segments?(view_version_id, :story_script_vv) or
+      treatment_harness_stale?(view_version_id)
+  end
+
   def view_version_stale?(view_version_id, view_version_type) do
     stale_segments?(view_version_id, view_version_type)
   end
@@ -79,6 +89,72 @@ defmodule Storybox.Stories.Staleness do
             latest_version =
               ThroughlineViewVersion
               |> Ash.Query.filter(throughline_view_id == ^recorded.throughline_view_id)
+              |> Ash.read!(authorize?: false)
+              |> Enum.map(& &1.version_number)
+              |> Enum.max(fn -> recorded.version_number end)
+
+            recorded.version_number < latest_version
+        end
+    end
+  end
+
+  # A TreatmentViewVersion is cross-layer stale when a newer Synopsis ViewVersion
+  # exists than the one it was cut against. A nil cross-layer reference (no
+  # Synopsis View/VV at cut time) is never stale.
+  defp synopsis_harness_stale?(treatment_vv_id) do
+    treatment_vv =
+      TreatmentViewVersion
+      |> Ash.Query.filter(id == ^treatment_vv_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case treatment_vv && treatment_vv.synopsis_view_version_id do
+      nil ->
+        false
+
+      recorded_id ->
+        case SynopsisViewVersion
+             |> Ash.Query.filter(id == ^recorded_id)
+             |> Ash.read_one!(authorize?: false) do
+          nil ->
+            false
+
+          recorded ->
+            latest_version =
+              SynopsisViewVersion
+              |> Ash.Query.filter(synopsis_view_id == ^recorded.synopsis_view_id)
+              |> Ash.read!(authorize?: false)
+              |> Enum.map(& &1.version_number)
+              |> Enum.max(fn -> recorded.version_number end)
+
+            recorded.version_number < latest_version
+        end
+    end
+  end
+
+  # A StoryScriptViewVersion is cross-layer stale when a newer Treatment
+  # ViewVersion exists than the one it was cut against. A nil cross-layer
+  # reference (no Treatment View/VV at cut time) is never stale.
+  defp treatment_harness_stale?(story_script_vv_id) do
+    story_script_vv =
+      StoryScriptViewVersion
+      |> Ash.Query.filter(id == ^story_script_vv_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case story_script_vv && story_script_vv.treatment_view_version_id do
+      nil ->
+        false
+
+      recorded_id ->
+        case TreatmentViewVersion
+             |> Ash.Query.filter(id == ^recorded_id)
+             |> Ash.read_one!(authorize?: false) do
+          nil ->
+            false
+
+          recorded ->
+            latest_version =
+              TreatmentViewVersion
+              |> Ash.Query.filter(treatment_view_id == ^recorded.treatment_view_id)
               |> Ash.read!(authorize?: false)
               |> Enum.map(& &1.version_number)
               |> Enum.max(fn -> recorded.version_number end)

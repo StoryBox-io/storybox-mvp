@@ -8,6 +8,13 @@ defmodule Storybox.Stories.TreatmentViewVersion do
   postgres do
     table "treatment_view_versions"
     repo Storybox.Repo
+
+    references do
+      # The recorded Synopsis VV is immutable and not deleted in normal
+      # operation; if one is ever removed, the cross-layer reference nils out
+      # (staleness treats a nil reference as "not stale") rather than cascading.
+      reference :synopsis_view_version, on_delete: :nilify
+    end
   end
 
   attributes do
@@ -15,11 +22,24 @@ defmodule Storybox.Stories.TreatmentViewVersion do
 
     attribute :version_number, :integer, allow_nil?: false, public?: true
 
+    # View-level cross-layer reference: the Synopsis ViewVersion this treatment
+    # VV was cut against. It sits alongside the per-Sequence segment list (never
+    # as a segment) and drives cross-layer staleness — a newer Synopsis VV than
+    # the one recorded makes this TreatmentViewVersion read stale. Nil when no
+    # Synopsis View/VV existed at cut time.
+    attribute :synopsis_view_version_id, :uuid, allow_nil?: true, public?: true
+
     create_timestamp :inserted_at
   end
 
   relationships do
     belongs_to :treatment_view, Storybox.Stories.TreatmentView, allow_nil?: false, public?: true
+
+    belongs_to :synopsis_view_version, Storybox.Stories.SynopsisViewVersion,
+      allow_nil?: true,
+      public?: true,
+      define_attribute?: false,
+      source_attribute: :synopsis_view_version_id
 
     has_many :segments, Storybox.Stories.Segment,
       public?: true,
@@ -35,7 +55,7 @@ defmodule Storybox.Stories.TreatmentViewVersion do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:treatment_view_id, :version_number]
+      accept [:treatment_view_id, :version_number, :synopsis_view_version_id]
     end
 
     action :cut, :struct do
@@ -69,11 +89,14 @@ defmodule Storybox.Stories.TreatmentViewVersion do
           |> Enum.max(fn -> 0 end)
           |> Kernel.+(1)
 
+        synopsis_view_version_id = latest_synopsis_view_version_id(story_id)
+
         vv =
           Storybox.Stories.TreatmentViewVersion
           |> Ash.Changeset.for_create(:create, %{
             treatment_view_id: treatment_view_id,
-            version_number: next_version
+            version_number: next_version,
+            synopsis_view_version_id: synopsis_view_version_id
           })
           |> Ash.create!(authorize?: false)
 
@@ -114,8 +137,35 @@ defmodule Storybox.Stories.TreatmentViewVersion do
           story_id
         )
 
+        Storybox.Stories.TaskGeneration.after_treatment_vv_cut(vv.id, story_id)
+
         {:ok, vv}
       end
+    end
+  end
+
+  # Records the cross-layer snapshot: the id of the story's latest Synopsis
+  # ViewVersion (by version_number) at cut time, or nil when the story has no
+  # Synopsis View or no Synopsis VVs yet. This is a view-level reference, never a
+  # segment.
+  defp latest_synopsis_view_version_id(story_id) do
+    case Storybox.Stories.SynopsisView
+         |> Ash.Query.filter(story_id == ^story_id)
+         |> Ash.read_one!(authorize?: false) do
+      nil ->
+        nil
+
+      synopsis_view ->
+        Storybox.Stories.SynopsisViewVersion
+        |> Ash.Query.filter(synopsis_view_id == ^synopsis_view.id)
+        |> Ash.Query.sort(version_number: :desc)
+        |> Ash.Query.limit(1)
+        |> Ash.read!(authorize?: false)
+        |> List.first()
+        |> case do
+          nil -> nil
+          svv -> svv.id
+        end
     end
   end
 

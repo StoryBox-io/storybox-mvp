@@ -11,7 +11,13 @@ defmodule Storybox.Stories.StalenessTest do
     Segment,
     Staleness,
     Story,
-    SynopsisPiece
+    StoryScriptView,
+    StoryScriptViewVersion,
+    SynopsisPiece,
+    SynopsisView,
+    SynopsisViewVersion,
+    TreatmentView,
+    TreatmentViewVersion
   }
 
   setup do
@@ -201,5 +207,109 @@ defmodule Storybox.Stories.StalenessTest do
 
       assert summary.view_versions == []
     end
+  end
+
+  # The on-spine cross-layer edges: a TreatmentViewVersion records the
+  # SynopsisViewVersion it was cut against, and a StoryScriptViewVersion records
+  # the TreatmentViewVersion it was cut against. A newer rougher-layer VV than
+  # the one recorded makes the finer VV read stale (review-all, no segments).
+  describe "view_version_stale?/2 :treatment_vv cross-layer clause" do
+    test "false when no newer SynopsisViewVersion exists", %{story: story} do
+      _svv1 = cut_synopsis_vv(story.id)
+      tvv = cut_treatment_vv(story.id)
+
+      refute Staleness.view_version_stale?(tvv.id, :treatment_vv)
+    end
+
+    test "true after a second SynopsisViewVersion is cut", %{story: story} do
+      _svv1 = cut_synopsis_vv(story.id)
+      tvv = cut_treatment_vv(story.id)
+
+      _svv2 = cut_synopsis_vv(story.id)
+
+      assert Staleness.view_version_stale?(tvv.id, :treatment_vv)
+    end
+
+    test "false when synopsis_view_version_id is nil (no Synopsis VV at cut time)", %{
+      story: story
+    } do
+      tvv = cut_treatment_vv(story.id)
+
+      assert is_nil(tvv.synopsis_view_version_id)
+      refute Staleness.view_version_stale?(tvv.id, :treatment_vv)
+    end
+  end
+
+  describe "view_version_stale?/2 :story_script_vv cross-layer clause" do
+    test "false when no newer TreatmentViewVersion exists", %{story: story} do
+      _tvv1 = cut_treatment_vv(story.id)
+      ssvv = cut_story_script_vv(story.id)
+
+      refute Staleness.view_version_stale?(ssvv.id, :story_script_vv)
+    end
+
+    test "true after a second TreatmentViewVersion is cut", %{story: story} do
+      _tvv1 = cut_treatment_vv(story.id)
+      ssvv = cut_story_script_vv(story.id)
+
+      _tvv2 = cut_treatment_vv(story.id)
+
+      assert Staleness.view_version_stale?(ssvv.id, :story_script_vv)
+    end
+
+    test "false when treatment_view_version_id is nil (no Treatment VV at cut time)", %{
+      story: story
+    } do
+      ssvv = cut_story_script_vv(story.id)
+
+      assert is_nil(ssvv.treatment_view_version_id)
+      refute Staleness.view_version_stale?(ssvv.id, :story_script_vv)
+    end
+  end
+
+  defp synopsis_view_id(story_id) do
+    SynopsisView
+    |> Ash.Query.filter(story_id == ^story_id)
+    |> Ash.read_one!(authorize?: false)
+    |> Map.fetch!(:id)
+  end
+
+  defp treatment_view_id(story_id) do
+    TreatmentView
+    |> Ash.Query.filter(story_id == ^story_id)
+    |> Ash.read_one!(authorize?: false)
+    |> Map.fetch!(:id)
+  end
+
+  defp cut_synopsis_vv(story_id) do
+    {:ok, svv} =
+      SynopsisViewVersion
+      |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: synopsis_view_id(story_id)})
+      |> Ash.run_action()
+
+    svv
+  end
+
+  defp cut_treatment_vv(story_id) do
+    {:ok, tvv} =
+      TreatmentViewVersion
+      |> Ash.ActionInput.for_action(:cut, %{treatment_view_id: treatment_view_id(story_id)})
+      |> Ash.run_action()
+
+    tvv
+  end
+
+  defp cut_story_script_vv(story_id) do
+    {:ok, ssv} =
+      StoryScriptView
+      |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story_id})
+      |> Ash.run_action()
+
+    {:ok, ssvv} =
+      StoryScriptViewVersion
+      |> Ash.ActionInput.for_action(:cut, %{story_script_view_id: ssv.id})
+      |> Ash.run_action()
+
+    ssvv
   end
 end
