@@ -300,5 +300,60 @@ defmodule StoryboxWeb.TreatmentViewTest do
                %{"sequence_id" => seq_a.id, "content" => "Act one treatment."}
              ]
     end
+
+    test "?sequence_id scopes paragraphs to that single sequence", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token,
+      seq_a: seq_a,
+      seq_b: seq_b
+    } do
+      create_sequence_piece(story, seq_a, "Act one treatment.")
+      create_sequence_piece(story, seq_b, "Act two treatment.")
+      cut_treatment(story)
+
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/treatment?sequence_id=#{seq_b.id}")
+
+      body = json_response(conn, 200)
+
+      assert body["resolved"] == true
+      assert body["unresolvable"] == []
+
+      assert body["paragraphs"] == [
+               %{"sequence_id" => seq_b.id, "content" => "Act two treatment."}
+             ]
+    end
+
+    test "?sequence_id for a sequence in another story returns 404", %{
+      conn: conn,
+      story: story,
+      other_story: other_story,
+      raw_token: raw_token
+    } do
+      other_seq = create_sequence(other_story, "Foreign", "foreign-seq")
+
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/treatment?sequence_id=#{other_seq.id}")
+
+      assert json_response(conn, 404)["error"] == "sequence not found"
+    end
+
+    test "malformed ?sequence_id returns 404", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token
+    } do
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/treatment?sequence_id=not-a-uuid")
+
+      assert json_response(conn, 404)["error"] == "sequence not found"
+    end
   end
 end

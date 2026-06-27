@@ -356,5 +356,60 @@ defmodule StoryboxWeb.SynopsisViewTest do
 
       assert json_response(conn, 403)["error"] == "forbidden"
     end
+
+    test "?sequence_id scopes paragraphs to that single sequence", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token,
+      seq_a: seq_a,
+      seq_b: seq_b
+    } do
+      create_synopsis_piece(story, seq_a, "Act one synopsis.")
+      create_synopsis_piece(story, seq_b, "Act two synopsis.")
+      cut_synopsis(story)
+
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis?sequence_id=#{seq_a.id}")
+
+      body = json_response(conn, 200)
+
+      assert body["resolved"] == true
+      assert body["unresolvable"] == []
+
+      assert body["paragraphs"] == [
+               %{"sequence_id" => seq_a.id, "content" => "Act one synopsis."}
+             ]
+    end
+
+    test "?sequence_id for a sequence in another story returns 404", %{
+      conn: conn,
+      story: story,
+      other_story: other_story,
+      raw_token: raw_token
+    } do
+      other_seq = create_sequence(other_story, "Foreign", "foreign-seq")
+
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis?sequence_id=#{other_seq.id}")
+
+      assert json_response(conn, 404)["error"] == "sequence not found"
+    end
+
+    test "malformed ?sequence_id returns 404", %{
+      conn: conn,
+      story: story,
+      raw_token: raw_token
+    } do
+      conn =
+        conn
+        |> authed(raw_token)
+        |> get("/api/stories/#{story.id}/views/synopsis?sequence_id=not-a-uuid")
+
+      assert json_response(conn, 404)["error"] == "sequence not found"
+    end
   end
 end
