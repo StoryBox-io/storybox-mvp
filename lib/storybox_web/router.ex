@@ -49,6 +49,7 @@ defmodule StoryboxWeb.Router do
     get "/stories/:story_id/views/treatment", ApiController, :treatment_view
     get "/stories/:story_id/views/throughline", ApiController, :throughline_view
     get "/stories/:story_id/views/script", ApiController, :script_view
+    get "/stories/:story_id/staleness", ApiController, :staleness_summary
     get "/stories/:story_id/pieces/:piece_type/:piece_id", ApiController, :piece_version
     post "/stories/:story_id/scenes/:id/versions", ApiController, :create_scene_version
     get "/stories/:story_id/tasks", ApiController, :list_tasks
