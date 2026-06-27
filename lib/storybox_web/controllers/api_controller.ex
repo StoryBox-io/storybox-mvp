@@ -1047,6 +1047,49 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  # Writes a synopsis-prose SynopsisPiece version, the top of the rough-to-fine
+  # chain. Addressed by slug like create_sequence_piece: a not-yet-existing
+  # target sequence is lazily materialized (Sequence + spine entry) via
+  # find_or_create_sequence/3. The response is inlined with the three fields the
+  # resource carries — SynopsisPiece has no `weights`, so format_version/1 would
+  # raise. `name` defaults to the slug.
+  def create_synopsis_piece(conn, %{"seq_slug" => seq_slug} = params) do
+    story = conn.assigns.current_story
+    content = params["content"]
+
+    if is_nil(content) or content == "" do
+      conn |> put_status(400) |> json(%{error: "content is required"})
+    else
+      name = Map.get(params, "name", seq_slug)
+
+      case find_or_create_sequence(story.id, seq_slug, name) do
+        {:error, _} ->
+          conn |> put_status(500) |> json(%{error: "internal error"})
+
+        {:ok, sequence} ->
+          case Storybox.Stories.SynopsisPiece
+               |> Ash.ActionInput.for_action(:create_version, %{
+                 story_id: story.id,
+                 sequence_id: sequence.id,
+                 content: content
+               })
+               |> Ash.run_action(authorize?: false) do
+            {:ok, piece} ->
+              conn
+              |> put_status(201)
+              |> json(%{
+                id: piece.id,
+                version_number: piece.version_number,
+                inserted_at: piece.inserted_at
+              })
+
+            {:error, _} ->
+              conn |> put_status(503) |> json(%{error: "storage error"})
+          end
+      end
+    end
+  end
+
   def list_tasks(conn, params) do
     story = conn.assigns.current_story
     status_str = Map.get(params, "status", "pending")
