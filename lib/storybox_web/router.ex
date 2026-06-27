@@ -69,6 +69,10 @@ defmodule StoryboxWeb.Router do
          ApiController,
          :create_sequence_piece
 
+    post "/stories/:story_id/sequences/:seq_slug/synopsis/pieces",
+         ApiController,
+         :create_synopsis_piece
+
     post "/stories/:story_id/scenes/:scene_id/weights", ApiController, :set_script_piece_weights
 
     get "/stories/:story_id/characters", ApiController, :list_characters
