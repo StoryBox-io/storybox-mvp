@@ -1595,6 +1595,104 @@ defmodule StoryboxWeb.ApiController do
     end)
   end
 
+  # Returns the raw content of one specific Piece version, addressed by its
+  # piece type + id. Read-only and per-version: each PieceVersion is its own row,
+  # so any version (not just the latest) is fetchable, letting a client diff a
+  # working draft against the committed state before writing. Ownership is
+  # enforced per type — direct `story_id` pieces (synopsis/sequence/throughline)
+  # vs. parent-chain pieces (script→Scene, character→Character, world→World) —
+  # so a piece belonging to another story reads as 404, never leaking content.
+  def piece_version(conn, %{"piece_type" => raw_type, "piece_id" => piece_id}) do
+    story = conn.assigns.current_story
+
+    case parse_piece_type(raw_type) do
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{error: "unknown piece_type"})
+
+      {:ok, type} ->
+        case load_piece_for_story(type, piece_id, story) do
+          nil ->
+            conn |> put_status(404) |> json(%{error: "not found"})
+
+          piece ->
+            case Storybox.Storage.get_content(piece.content_uri) do
+              {:ok, content} ->
+                json(conn, %{
+                  piece_id: piece.id,
+                  piece_type: raw_type,
+                  version_number: piece.version_number,
+                  content: content
+                })
+
+              {:error, _} ->
+                conn |> put_status(503) |> json(%{error: "content unavailable"})
+            end
+        end
+    end
+  end
+
+  defp parse_piece_type("script"), do: {:ok, :script}
+  defp parse_piece_type("synopsis"), do: {:ok, :synopsis}
+  defp parse_piece_type("sequence"), do: {:ok, :sequence}
+  defp parse_piece_type("character"), do: {:ok, :character}
+  defp parse_piece_type("world"), do: {:ok, :world}
+  defp parse_piece_type("throughline"), do: {:ok, :throughline}
+  defp parse_piece_type(_), do: {:error, :unknown_piece_type}
+
+  # Direct-story types: the piece carries `story_id`, so ownership is a single
+  # filtered read. A piece in another story (or a missing id) yields nil → 404.
+  defp load_piece_for_story(:synopsis, piece_id, story),
+    do: read_piece_in_story(Storybox.Stories.SynopsisPiece, piece_id, story.id)
+
+  defp load_piece_for_story(:sequence, piece_id, story),
+    do: read_piece_in_story(Storybox.Stories.SequencePiece, piece_id, story.id)
+
+  defp load_piece_for_story(:throughline, piece_id, story),
+    do: read_piece_in_story(Storybox.Stories.ThroughlinePiece, piece_id, story.id)
+
+  # Parent-chain types: the piece has no `story_id`, so ownership is verified via
+  # its parent entity (Scene / Character / World) belonging to this story. Either
+  # the piece or the ownership check failing yields nil → 404.
+  defp load_piece_for_story(:script, piece_id, story) do
+    piece =
+      Storybox.Stories.ScriptPiece
+      |> Ash.Query.filter(id == ^piece_id)
+      |> Ash.read_one!(authorize?: false)
+
+    scene =
+      piece &&
+        Storybox.Stories.Scene
+        |> Ash.Query.filter(id == ^piece.scene_id and story_id == ^story.id)
+        |> Ash.read_one!(authorize?: false)
+
+    if scene, do: piece
+  end
+
+  defp load_piece_for_story(:character, piece_id, story) do
+    piece =
+      Storybox.Stories.CharacterPiece
+      |> Ash.Query.filter(id == ^piece_id)
+      |> Ash.read_one!(authorize?: false)
+
+    if piece && load_character_for_story(piece.character_id, story.id), do: piece
+  end
+
+  defp load_piece_for_story(:world, piece_id, story) do
+    piece =
+      Storybox.Stories.WorldPiece
+      |> Ash.Query.filter(id == ^piece_id)
+      |> Ash.read_one!(authorize?: false)
+
+    world = load_world_for_story(story.id)
+    if piece && world && piece.world_id == world.id, do: piece
+  end
+
+  defp read_piece_in_story(resource, piece_id, story_id) do
+    resource
+    |> Ash.Query.filter(id == ^piece_id and story_id == ^story_id)
+    |> Ash.read_one!(authorize?: false)
+  end
+
   defp load_task_for_story(task_id, story_id) do
     Storybox.Stories.Task
     |> Ash.Query.filter(id == ^task_id and story_id == ^story_id)
