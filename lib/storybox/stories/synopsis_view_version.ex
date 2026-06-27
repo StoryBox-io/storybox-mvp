@@ -141,6 +141,8 @@ defmodule Storybox.Stories.SynopsisViewVersion do
           story_id
         )
 
+        Storybox.Stories.TaskGeneration.after_synopsis_vv_cut(vv.id, story_id)
+
         {:ok, vv}
       end
     end
