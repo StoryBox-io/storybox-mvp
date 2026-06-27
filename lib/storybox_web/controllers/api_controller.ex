@@ -76,6 +76,43 @@ defmodule StoryboxWeb.ApiController do
     Enum.filter(segments, &(&1.sequence_id == sequence_id))
   end
 
+  # Region-scopes a staleness summary. nil is a pass-through (full summary).
+  # Only `:sequence_vv` entries are region-bound — they are pruned to the VVs
+  # belonging to the requested Sequence's SequenceView. All other VV types
+  # (synopsis, treatment, story_script, script) are story-wide and pass through.
+  defp filter_view_versions_by_sequence(vvs, nil), do: vvs
+
+  defp filter_view_versions_by_sequence(vvs, sequence_id) do
+    allowed = sequence_vv_ids_for_sequence(sequence_id)
+
+    Enum.filter(vvs, fn
+      %{type: :sequence_vv, id: id} -> MapSet.member?(allowed, id)
+      _ -> true
+    end)
+  end
+
+  # The set of SequenceViewVersion ids for a Sequence's SequenceView. A Sequence
+  # with no SequenceView (none ever cut) yields an empty set, so every
+  # `:sequence_vv` entry is pruned for it.
+  defp sequence_vv_ids_for_sequence(sequence_id) do
+    case Storybox.Stories.SequenceView
+         |> Ash.Query.filter(sequence_id == ^sequence_id)
+         |> Ash.read_one(authorize?: false) do
+      {:ok, nil} ->
+        MapSet.new()
+
+      {:ok, sv} ->
+        Storybox.Stories.SequenceViewVersion
+        |> Ash.Query.filter(sequence_view_id == ^sv.id)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(& &1.id)
+        |> MapSet.new()
+
+      {:error, _} ->
+        MapSet.new()
+    end
+  end
+
   def synopsis_view(conn, params) do
     story = conn.assigns.current_story
 
@@ -617,6 +654,29 @@ defmodule StoryboxWeb.ApiController do
 
       {:ok, slots} ->
         stream_fountain(conn, slots)
+    end
+  end
+
+  # Returns the story's View-staleness summary — "what did this edit make
+  # stale?". The computation (`story_stale_summary/1`) is reused untouched; the
+  # optional `?sequence_id=` filter region-scopes the result by pruning only
+  # `:sequence_vv` entries to the requested Sequence (story-wide VV types pass
+  # through). An unknown/foreign/malformed sequence is a 404.
+  def staleness_summary(conn, params) do
+    story = conn.assigns.current_story
+
+    with {:ok, sequence_id} <- parse_and_validate_sequence(story, params) do
+      %{view_versions: vvs} = Storybox.Stories.Staleness.story_stale_summary(story.id)
+      filtered = filter_view_versions_by_sequence(vvs, sequence_id)
+
+      json(conn, %{
+        story_id: story.id,
+        sequence_id: sequence_id,
+        view_versions: filtered
+      })
+    else
+      {:error, :sequence_not_found} ->
+        conn |> put_status(404) |> json(%{error: "sequence not found"})
     end
   end
 
