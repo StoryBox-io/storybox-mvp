@@ -62,6 +62,10 @@ defmodule StoryboxWeb.Router do
          ApiController,
          :cut_sequence_vv
 
+    post "/stories/:story_id/sequences/:seq_id/spine/insert", ApiController, :spine_insert
+    post "/stories/:story_id/sequences/:seq_id/spine/reorder", ApiController, :spine_reorder
+    post "/stories/:story_id/sequences/:seq_id/spine/remove", ApiController, :spine_remove
+
     post "/stories/:story_id/scenes/:scene_id/views/script/cut", ApiController, :cut_script_vv
     post "/stories/:story_id/views/story_script/cut", ApiController, :cut_story_script_vv
     post "/stories/:story_id/sequences/:seq_id/weights", ApiController, :set_sequence_weights

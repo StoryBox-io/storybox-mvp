@@ -1441,6 +1441,91 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  # Insert a Sequence onto the Story's spine at a position. Composes the two
+  # existing StorySpine ops (add_entry appends at the tail, reorder_entry clamps +
+  # repacks densely) inside a transaction to deliver true insert-at-position in a
+  # single API call. Omitting "position" appends at the tail.
+  def spine_insert(conn, %{"seq_id" => seq_id} = params) do
+    story = conn.assigns.current_story
+
+    with {:sequence, seq} when not is_nil(seq) <-
+           {:sequence, load_sequence_for_story(seq_id, story.id)},
+         {:spine, spine} when not is_nil(spine) <-
+           {:spine, load_spine_for_story(story.id)},
+         {:existing, nil} <- {:existing, load_spine_entry(spine.id, seq_id)},
+         {:position, {:ok, position}} <- {:position, parse_optional_position(params)} do
+      case insert_entry_at(spine.id, seq_id, position) do
+        {:ok, entry} ->
+          conn |> put_status(201) |> json(%{sequence_id: seq_id, position: entry.position})
+
+        {:error, _} ->
+          conn |> put_status(500) |> json(%{error: "internal error"})
+      end
+    else
+      {:sequence, nil} ->
+        conn |> put_status(404) |> json(%{error: "not found"})
+
+      {:spine, nil} ->
+        conn |> put_status(404) |> json(%{error: "not found"})
+
+      {:existing, _entry} ->
+        conn |> put_status(409) |> json(%{error: "sequence already on spine"})
+
+      {:position, {:error, msg}} ->
+        conn |> put_status(400) |> json(%{error: msg})
+    end
+  end
+
+  # Reorder a Sequence to a new position on the spine. reorder_entry clamps the
+  # target to 1..count and repacks the remaining entries densely.
+  def spine_reorder(conn, %{"seq_id" => seq_id} = params) do
+    story = conn.assigns.current_story
+
+    with {:sequence, seq} when not is_nil(seq) <-
+           {:sequence, load_sequence_for_story(seq_id, story.id)},
+         {:position, {:ok, new_position}} <- {:position, parse_required_position(params)},
+         {:spine, spine} when not is_nil(spine) <-
+           {:spine, load_spine_for_story(story.id)},
+         {:existing, entry} when not is_nil(entry) <-
+           {:existing, load_spine_entry(spine.id, seq_id)} do
+      case run_reorder_entry(spine.id, seq_id, new_position) do
+        {:ok, updated} ->
+          json(conn, %{sequence_id: seq_id, position: updated.position})
+
+        {:error, _} ->
+          conn |> put_status(500) |> json(%{error: "internal error"})
+      end
+    else
+      {:sequence, nil} -> conn |> put_status(404) |> json(%{error: "not found"})
+      {:position, {:error, msg}} -> conn |> put_status(400) |> json(%{error: msg})
+      {:spine, nil} -> conn |> put_status(404) |> json(%{error: "not found"})
+      {:existing, nil} -> conn |> put_status(422) |> json(%{error: "sequence not on spine"})
+    end
+  end
+
+  # Remove a Sequence from the spine. remove_entry destroys only the spine entry
+  # and repacks the remaining positions densely; the Sequence's Pieces persist,
+  # so a removed Sequence can be reinstated via spine_insert.
+  def spine_remove(conn, %{"seq_id" => seq_id}) do
+    story = conn.assigns.current_story
+
+    with {:sequence, seq} when not is_nil(seq) <-
+           {:sequence, load_sequence_for_story(seq_id, story.id)},
+         {:spine, spine} when not is_nil(spine) <-
+           {:spine, load_spine_for_story(story.id)},
+         {:existing, entry} when not is_nil(entry) <-
+           {:existing, load_spine_entry(spine.id, seq_id)} do
+      case run_remove_entry(spine.id, seq_id) do
+        {:ok, _} -> json(conn, %{sequence_id: seq_id})
+        {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+      end
+    else
+      {:sequence, nil} -> conn |> put_status(404) |> json(%{error: "not found"})
+      {:spine, nil} -> conn |> put_status(404) |> json(%{error: "not found"})
+      {:existing, nil} -> conn |> put_status(422) |> json(%{error: "sequence not on spine"})
+    end
+  end
+
   def list_characters(conn, _params) do
     story = conn.assigns.current_story
 
@@ -1893,6 +1978,81 @@ defmodule StoryboxWeb.ApiController do
     Storybox.Stories.Sequence
     |> Ash.Query.filter(id == ^seq_id and story_id == ^story_id)
     |> Ash.read_one!(authorize?: false)
+  end
+
+  defp load_spine_for_story(story_id) do
+    Storybox.Stories.StorySpine
+    |> Ash.Query.filter(story_id == ^story_id)
+    |> Ash.read_one!(authorize?: false)
+  end
+
+  defp load_spine_entry(spine_id, sequence_id) do
+    Storybox.Stories.StorySpineEntry
+    |> Ash.Query.filter(story_spine_id == ^spine_id and sequence_id == ^sequence_id)
+    |> Ash.read_one!(authorize?: false)
+  end
+
+  defp parse_optional_position(params) do
+    case Map.get(params, "position") do
+      nil -> {:ok, nil}
+      pos when is_integer(pos) and pos > 0 -> {:ok, pos}
+      _ -> {:error, "position must be a positive integer"}
+    end
+  end
+
+  defp parse_required_position(params) do
+    case Map.get(params, "new_position") do
+      pos when is_integer(pos) and pos > 0 -> {:ok, pos}
+      _ -> {:error, "new_position must be a positive integer"}
+    end
+  end
+
+  # Composes add_entry (append at the tail) with reorder_entry (clamp + dense
+  # repack) inside Ash.transact/2. On a "position" of nil the tail entry is
+  # returned as-is; otherwise reorder_entry lands the sequence at the requested
+  # slot. Ash.transact rolls the transaction back when the inner function returns
+  # {:error, _}, so a failed reorder undoes the append — the sequence is never
+  # left stranded at the tail.
+  defp insert_entry_at(spine_id, sequence_id, position) do
+    Ash.transact(Storybox.Stories.StorySpineEntry, fn ->
+      with {:ok, entry} <- run_add_entry(spine_id, sequence_id),
+           {:ok, final} <- maybe_reorder(spine_id, sequence_id, position, entry) do
+        final
+      end
+    end)
+  end
+
+  defp maybe_reorder(_spine_id, _sequence_id, nil, entry), do: {:ok, entry}
+
+  defp maybe_reorder(spine_id, sequence_id, position, _entry),
+    do: run_reorder_entry(spine_id, sequence_id, position)
+
+  defp run_add_entry(spine_id, sequence_id) do
+    Storybox.Stories.StorySpine
+    |> Ash.ActionInput.for_action(:add_entry, %{
+      story_spine_id: spine_id,
+      sequence_id: sequence_id
+    })
+    |> Ash.run_action(authorize?: false)
+  end
+
+  defp run_reorder_entry(spine_id, sequence_id, new_position) do
+    Storybox.Stories.StorySpine
+    |> Ash.ActionInput.for_action(:reorder_entry, %{
+      story_spine_id: spine_id,
+      sequence_id: sequence_id,
+      new_position: new_position
+    })
+    |> Ash.run_action(authorize?: false)
+  end
+
+  defp run_remove_entry(spine_id, sequence_id) do
+    Storybox.Stories.StorySpine
+    |> Ash.ActionInput.for_action(:remove_entry, %{
+      story_spine_id: spine_id,
+      sequence_id: sequence_id
+    })
+    |> Ash.run_action(authorize?: false)
   end
 
   # Resolves a Sequence by slug within a story, creating it if absent. The
