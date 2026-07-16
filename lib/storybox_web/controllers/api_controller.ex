@@ -1222,8 +1222,9 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  def cut_synopsis_vv(conn, _params) do
+  def cut_synopsis_vv(conn, params) do
     story = conn.assigns.current_story
+    segments = Map.get(params, "segments")
 
     with {:ok, view} <-
            Storybox.Stories.SynopsisView
@@ -1231,7 +1232,7 @@ defmodule StoryboxWeb.ApiController do
            |> Ash.run_action(authorize?: false),
          {:ok, vv} <-
            Storybox.Stories.SynopsisViewVersion
-           |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: view.id})
+           |> Ash.ActionInput.for_action(:cut, %{synopsis_view_id: view.id, segments: segments})
            |> Ash.run_action(authorize?: false) do
       conn |> put_status(201) |> json(format_cut_vv(vv, :synopsis_vv))
     else
@@ -1239,8 +1240,9 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  def cut_treatment_vv(conn, _params) do
+  def cut_treatment_vv(conn, params) do
     story = conn.assigns.current_story
+    segments = Map.get(params, "segments")
 
     with {:ok, view} <-
            Storybox.Stories.TreatmentView
@@ -1248,7 +1250,7 @@ defmodule StoryboxWeb.ApiController do
            |> Ash.run_action(authorize?: false),
          {:ok, vv} <-
            Storybox.Stories.TreatmentViewVersion
-           |> Ash.ActionInput.for_action(:cut, %{treatment_view_id: view.id})
+           |> Ash.ActionInput.for_action(:cut, %{treatment_view_id: view.id, segments: segments})
            |> Ash.run_action(authorize?: false) do
       conn |> put_status(201) |> json(format_cut_vv(vv, :treatment_vv))
     else
@@ -1256,8 +1258,9 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  def cut_story_script_vv(conn, _params) do
+  def cut_story_script_vv(conn, params) do
     story = conn.assigns.current_story
+    segments = Map.get(params, "segments")
 
     with {:ok, view} <-
            Storybox.Stories.StoryScriptView
@@ -1265,7 +1268,10 @@ defmodule StoryboxWeb.ApiController do
            |> Ash.run_action(authorize?: false),
          {:ok, vv} <-
            Storybox.Stories.StoryScriptViewVersion
-           |> Ash.ActionInput.for_action(:cut, %{story_script_view_id: view.id})
+           |> Ash.ActionInput.for_action(:cut, %{
+             story_script_view_id: view.id,
+             segments: segments
+           })
            |> Ash.run_action(authorize?: false) do
       conn |> put_status(201) |> json(format_cut_vv(vv, :story_script_vv))
     else
