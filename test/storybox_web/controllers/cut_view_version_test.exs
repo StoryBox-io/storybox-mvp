@@ -125,6 +125,74 @@ defmodule StoryboxWeb.CutViewVersionTest do
       assert seg["position"] == 1
     end
 
+    test "201 pins exactly the explicit segments supplied in the JSON body", %{
+      conn: conn,
+      story: story,
+      sequence: sequence,
+      raw_token: token
+    } do
+      # An explicit pin needs a SynopsisPiece to reference.
+      {:ok, piece} =
+        Storybox.Stories.SynopsisPiece
+        |> Ash.Changeset.for_create(:create, %{
+          story_id: story.id,
+          sequence_id: sequence.id,
+          content_uri: Storybox.Storage.uri_for_synopsis_piece(story.id, sequence.id, 1),
+          version_number: 1
+        })
+        |> Ash.create(authorize?: false)
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer #{token}")
+        |> post("/api/stories/#{story.id}/views/synopsis/cut", %{
+          "segments" => [
+            %{
+              "sequence_id" => sequence.id,
+              "pin_id" => piece.id,
+              "pin_type" => "synopsis_piece",
+              "pin_version_at_creation" => 1
+            }
+          ]
+        })
+
+      body = json_response(conn, 201)
+      assert body["id"]
+      # Explicit pin resolves, so no unresolvable segments (auto-latest would
+      # have produced one, since the setup sequence has no piece before this).
+      assert body["unresolvable_segments"] == []
+
+      # Read back the persisted segment to confirm the exact pin was written.
+      segments =
+        Storybox.Stories.Segment
+        |> Ash.Query.filter(view_version_id == ^body["id"] and view_version_type == :synopsis_vv)
+        |> Ash.read!(authorize?: false)
+
+      assert [seg] = segments
+      assert seg.sequence_id == sequence.id
+      assert seg.pin_id == piece.id
+      assert seg.pin_type == :synopsis_piece
+      assert seg.pin_version_at_creation == 1
+    end
+
+    test "201 with an explicit nil-pin segment cuts a deliberate hole", %{
+      conn: conn,
+      story: story,
+      sequence: sequence,
+      raw_token: token
+    } do
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer #{token}")
+        |> post("/api/stories/#{story.id}/views/synopsis/cut", %{
+          "segments" => [%{"sequence_id" => sequence.id}]
+        })
+
+      body = json_response(conn, 201)
+      assert [seg] = body["unresolvable_segments"]
+      assert seg["sequence_id"] == sequence.id
+    end
+
     test "401 without token", %{conn: conn, story: story} do
       conn = post(conn, "/api/stories/#{story.id}/views/synopsis/cut")
       assert json_response(conn, 401)
