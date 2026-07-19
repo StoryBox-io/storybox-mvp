@@ -75,8 +75,16 @@ defmodule StoryboxWeb.ThroughlineViewTest do
     }
   end
 
-  # Ensures the ThroughlineView and cuts a fresh ViewVersion with the given
-  # explicit segment list (the harness has no spine to derive segments from).
+  defp segment_for_vv(vv, pin_type) do
+    %{
+      "pin_id" => vv.id,
+      "pin_type" => pin_type,
+      "pin_version_at_creation" => vv.version_number
+    }
+  end
+
+  # Ensures the ThroughlineView and cuts a fresh top ViewVersion with the given
+  # explicit segment list.
   defp cut_throughline(story, segments) do
     tv = ensure_throughline_view(story)
 
@@ -86,6 +94,64 @@ defmodule StoryboxWeb.ThroughlineViewTest do
       |> Ash.run_action(authorize?: false)
 
     {tv, vv}
+  end
+
+  # Cuts a per-character through-line view version. With no explicit segments
+  # the cut auto-pins that character's latest ThroughlinePiece at position 1.
+  defp cut_character_throughline(story, character) do
+    {:ok, view} =
+      Storybox.Stories.CharacterThroughlineView
+      |> Ash.ActionInput.for_action(:ensure_for_story_character, %{
+        story_id: story.id,
+        character_id: character.id
+      })
+      |> Ash.run_action(authorize?: false)
+
+    {:ok, vv} =
+      Storybox.Stories.CharacterThroughlineViewVersion
+      |> Ash.ActionInput.for_action(:cut, %{character_throughline_view_id: view.id})
+      |> Ash.run_action(authorize?: false)
+
+    vv
+  end
+
+  defp cut_cast_throughline(story, segments) do
+    {:ok, view} =
+      Storybox.Stories.ThroughlineCastView
+      |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+      |> Ash.run_action(authorize?: false)
+
+    {:ok, vv} =
+      Storybox.Stories.ThroughlineCastViewVersion
+      |> Ash.ActionInput.for_action(:cut, %{
+        throughline_cast_view_id: view.id,
+        segments: segments
+      })
+      |> Ash.run_action(authorize?: false)
+
+    vv
+  end
+
+  # Builds the three-level harness from already-written pieces: one view version
+  # per character, a cast version pinning them in the given order, and a top
+  # version pinning the story arc (when given) plus the cast.
+  defp build_nested_throughline(story, story_piece, characters) do
+    cast_segments =
+      Enum.map(characters, fn character ->
+        story
+        |> cut_character_throughline(character)
+        |> segment_for_vv("throughline_vv")
+      end)
+
+    cast_pin =
+      case cast_segments do
+        [] -> []
+        segs -> [segment_for_vv(cut_cast_throughline(story, segs), "throughline_cast_vv")]
+      end
+
+    story_pin = if story_piece, do: [segment_for(story_piece)], else: []
+
+    cut_throughline(story, story_pin ++ cast_pin)
   end
 
   describe "GET /api/stories/:story_id/views/throughline" do
@@ -142,11 +208,10 @@ defmodule StoryboxWeb.ThroughlineViewTest do
       char_b = create_character(story, "Bob")
 
       idea = create_throughline_piece(story, nil, "The cost of revenge.")
-      line_a = create_throughline_piece(story, char_a.id, "Alice learns to forgive.")
-      line_b = create_throughline_piece(story, char_b.id, "Bob loses everything.")
+      _line_a = create_throughline_piece(story, char_a.id, "Alice learns to forgive.")
+      _line_b = create_throughline_piece(story, char_b.id, "Bob loses everything.")
 
-      {tv, vv} =
-        cut_throughline(story, [segment_for(idea), segment_for(line_a), segment_for(line_b)])
+      {tv, vv} = build_nested_throughline(story, idea, [char_a, char_b])
 
       conn =
         conn
@@ -175,15 +240,22 @@ defmodule StoryboxWeb.ThroughlineViewTest do
     } do
       char_a = create_character(story, "Alice")
       idea = create_throughline_piece(story, nil, "The cost of revenge.")
-      line_a = create_throughline_piece(story, char_a.id, "Alice learns to forgive.")
+      _line_a = create_throughline_piece(story, char_a.id, "Alice learns to forgive.")
 
-      # A nil-pin segment sits between the two resolved pieces.
-      {_tv, _vv} =
-        cut_throughline(story, [
-          segment_for(idea),
-          %{"pin_id" => nil, "pin_type" => nil, "pin_version_at_creation" => nil},
-          segment_for(line_a)
+      # A nil-pin entry sits in the cast stack alongside Alice's resolved line —
+      # a character slot whose view version was never pinned.
+      char_vv = cut_character_throughline(story, char_a)
+
+      cast_vv =
+        cut_cast_throughline(story, [
+          segment_for_vv(char_vv, "throughline_vv"),
+          %{"pin_id" => nil, "pin_type" => nil, "pin_version_at_creation" => nil}
         ])
+
+      cut_throughline(story, [
+        segment_for(idea),
+        segment_for_vv(cast_vv, "throughline_cast_vv")
+      ])
 
       conn =
         conn
@@ -233,9 +305,9 @@ defmodule StoryboxWeb.ThroughlineViewTest do
     test "controlling_idea is nil and through_lines empty when only a character line is pinned",
          %{conn: conn, story: story, raw_token: raw_token} do
       char_a = create_character(story, "Alice")
-      line_a = create_throughline_piece(story, char_a.id, "Alice learns to forgive.")
+      _line_a = create_throughline_piece(story, char_a.id, "Alice learns to forgive.")
 
-      cut_throughline(story, [segment_for(line_a)])
+      build_nested_throughline(story, nil, [char_a])
 
       conn =
         conn
@@ -259,7 +331,7 @@ defmodule StoryboxWeb.ThroughlineViewTest do
     } do
       idea = create_throughline_piece(story, nil, "The cost of revenge.")
 
-      cut_throughline(story, [segment_for(idea)])
+      build_nested_throughline(story, idea, [])
 
       conn =
         conn

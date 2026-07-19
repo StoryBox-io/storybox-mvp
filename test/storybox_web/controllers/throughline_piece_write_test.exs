@@ -203,6 +203,140 @@ defmodule StoryboxWeb.ThroughlinePieceWriteTest do
              end) == 1
     end
 
+    test "a write for one character leaves the other characters' views untouched", %{
+      conn: conn,
+      story: story,
+      char: char,
+      raw_token: token
+    } do
+      {:ok, bob} =
+        Storybox.Stories.Character
+        |> Ash.Changeset.for_create(:create, %{story_id: story.id, name: "Bob"})
+        |> Ash.create(authorize?: false)
+
+      write = fn body ->
+        conn
+        |> authed(token)
+        |> post("/api/stories/#{story.id}/throughline/pieces", body)
+        |> json_response(201)
+      end
+
+      char_vv_count = fn character ->
+        view =
+          Storybox.Stories.CharacterThroughlineView
+          |> Ash.Query.filter(story_id == ^story.id and character_id == ^character.id)
+          |> Ash.read_one!(authorize?: false)
+
+        Storybox.Stories.CharacterThroughlineViewVersion
+        |> Ash.Query.filter(character_throughline_view_id == ^view.id)
+        |> Ash.read!(authorize?: false)
+        |> length()
+      end
+
+      cast_vv_count = fn ->
+        view =
+          Storybox.Stories.ThroughlineCastView
+          |> Ash.Query.filter(story_id == ^story.id)
+          |> Ash.read_one!(authorize?: false)
+
+        Storybox.Stories.ThroughlineCastViewVersion
+        |> Ash.Query.filter(throughline_cast_view_id == ^view.id)
+        |> Ash.read!(authorize?: false)
+        |> length()
+      end
+
+      top_vv_count = fn ->
+        view =
+          Storybox.Stories.ThroughlineView
+          |> Ash.Query.filter(story_id == ^story.id)
+          |> Ash.read_one!(authorize?: false)
+
+        Storybox.Stories.ThroughlineViewVersion
+        |> Ash.Query.filter(throughline_view_id == ^view.id)
+        |> Ash.read!(authorize?: false)
+        |> length()
+      end
+
+      write.(%{"content" => "The cost of revenge."})
+      write.(%{"content" => "Alice v1.", "character_id" => char.id})
+      write.(%{"content" => "Bob v1.", "character_id" => bob.id})
+
+      before = %{
+        alice: char_vv_count.(char),
+        bob: char_vv_count.(bob),
+        cast: cast_vv_count.(),
+        top: top_vv_count.()
+      }
+
+      write.(%{"content" => "Alice v2.", "character_id" => char.id})
+
+      assert char_vv_count.(char) == before.alice + 1
+      assert char_vv_count.(bob) == before.bob
+      assert cast_vv_count.() == before.cast + 1
+      assert top_vv_count.() == before.top + 1
+
+      # Bob keeps his cast slot, and its position, across Alice's re-cut.
+      get_body =
+        conn
+        |> authed(token)
+        |> get("/api/stories/#{story.id}/views/throughline")
+        |> json_response(200)
+
+      assert get_body["controlling_idea"] == "The cost of revenge."
+
+      assert get_body["through_lines"] == [
+               %{"character_id" => char.id, "content" => "Alice v2."},
+               %{"character_id" => bob.id, "content" => "Bob v1."}
+             ]
+    end
+
+    test "a story-level write leaves the cast stack's pins intact", %{
+      conn: conn,
+      story: story,
+      char: char,
+      raw_token: token
+    } do
+      write = fn body ->
+        conn
+        |> authed(token)
+        |> post("/api/stories/#{story.id}/throughline/pieces", body)
+        |> json_response(201)
+      end
+
+      write.(%{"content" => "Alice v1.", "character_id" => char.id})
+
+      cast_view =
+        Storybox.Stories.ThroughlineCastView
+        |> Ash.Query.filter(story_id == ^story.id)
+        |> Ash.read_one!(authorize?: false)
+
+      cast_count = fn ->
+        Storybox.Stories.ThroughlineCastViewVersion
+        |> Ash.Query.filter(throughline_cast_view_id == ^cast_view.id)
+        |> Ash.read!(authorize?: false)
+        |> length()
+      end
+
+      before = cast_count.()
+
+      write.(%{"content" => "The cost of revenge."})
+
+      # No new cast version — a story-arc edit is not a statement about the cast.
+      assert cast_count.() == before
+
+      body =
+        conn
+        |> authed(token)
+        |> get("/api/stories/#{story.id}/views/throughline")
+        |> json_response(200)
+
+      assert body["controlling_idea"] == "The cost of revenge."
+
+      assert body["through_lines"] == [
+               %{"character_id" => char.id, "content" => "Alice v1."}
+             ]
+    end
+
     test "401 without token", %{conn: conn, story: story} do
       conn =
         post(conn, "/api/stories/#{story.id}/throughline/pieces", %{"content" => "x"})

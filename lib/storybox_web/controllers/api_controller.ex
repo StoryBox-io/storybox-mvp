@@ -536,60 +536,108 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  # Resolves the latest ThroughlineViewVersion to the controlling idea + one
-  # through-line per character. The harness has no spine — Segments pin directly
-  # to ThroughlinePiece and are traversed in `:position` order. Each resolved
-  # piece is split on its `character_id`: a nil character is the Story's
-  # controlling idea, a set character is that character's through-line. Null-pin
-  # segments are recorded in `unresolvable`; a storage failure surfaces as
-  # `{:error, :content_unavailable}`.
+  # Resolves the latest ThroughlineViewVersion by descending the nested harness:
+  # the top view carries the story-arc piece and the cast stack's version, the
+  # cast stack carries one per-character view version, and each of those carries
+  # that character's ThroughlinePiece. Character identity comes from the
+  # per-character view, not from the piece — the piece stays inert.
+  #
+  # Segments are addressed by `pin_type` rather than position: the story arc is
+  # conventionally position 1 and the cast position 2, but a story with no
+  # controlling idea yet cuts a top version holding the cast alone, and reading
+  # that as a story arc would be wrong.
+  #
+  # Null-pin segments at any level are recorded in `unresolvable`; a storage
+  # failure surfaces as `{:error, :content_unavailable}`. The response shape is
+  # unchanged from the flat harness this replaced.
   defp assemble_throughline_view(story, view, vv) do
-    throughline_vv_type = :throughline_vv
+    segments = load_segments(vv.id, :throughline_vv)
 
-    segments =
-      Storybox.Stories.Segment
-      |> Ash.Query.filter(view_version_id == ^vv.id and view_version_type == ^throughline_vv_type)
-      |> Ash.Query.sort(:position)
-      |> Ash.read!(authorize?: false)
+    story_seg = Enum.find(segments, fn seg -> seg.pin_type == :throughline_piece end)
+    cast_seg = Enum.find(segments, fn seg -> seg.pin_type == :throughline_cast_vv end)
 
-    result =
-      Enum.reduce_while(segments, {:ok, nil, [], []}, fn seg, {:ok, idea, lines, unres} ->
-        case seg do
-          %{pin_id: nil} ->
-            {:cont, {:ok, idea, lines, unres ++ [%{position: seg.position}]}}
+    unpinned =
+      segments
+      |> Enum.filter(fn seg -> is_nil(seg.pin_id) end)
+      |> Enum.map(fn seg -> %{position: seg.position} end)
 
-          seg ->
-            case fetch_throughline_piece_content(seg.pin_id) do
-              {:ok, %{character_id: nil}, content} ->
-                {:cont, {:ok, content, lines, unres}}
+    with {:ok, controlling_idea} <- resolve_story_arc(story_seg),
+         {:ok, through_lines, cast_unres} <- resolve_cast_stack(cast_seg) do
+      unresolvable = unpinned ++ cast_unres
 
-              {:ok, piece, content} ->
-                {:cont,
-                 {:ok, idea, lines ++ [%{character_id: piece.character_id, content: content}],
-                  unres}}
+      {:ok,
+       %{
+         story_id: story.id,
+         throughline_view_id: view.id,
+         version_number: vv.version_number,
+         inserted_at: vv.inserted_at,
+         resolved: unresolvable == [],
+         unresolvable: unresolvable,
+         controlling_idea: controlling_idea,
+         through_lines: through_lines
+       }}
+    end
+  end
 
-              {:error, :content_unavailable} ->
-                {:halt, {:error, :content_unavailable}}
-            end
+  # Position 1 of the top view: the story's controlling idea, or nil when the
+  # story has no arc pinned yet.
+  defp resolve_story_arc(nil), do: {:ok, nil}
+
+  defp resolve_story_arc(seg) do
+    case fetch_throughline_piece_content(seg.pin_id) do
+      {:ok, _piece, content} -> {:ok, content}
+      {:error, :content_unavailable} -> {:error, :content_unavailable}
+    end
+  end
+
+  # Position 2 of the top view: the cast stack, one segment per character in
+  # evaluation-priority order. No cast pinned means no characters have arcs yet.
+  defp resolve_cast_stack(nil), do: {:ok, [], []}
+
+  defp resolve_cast_stack(seg) do
+    cast_vv = read_by_id(Storybox.Stories.ThroughlineCastViewVersion, seg.pin_id)
+
+    cast_vv.id
+    |> load_segments(:throughline_cast_vv)
+    |> Enum.reduce_while({:ok, [], []}, fn cast_seg, {:ok, lines, unres} ->
+      case resolve_character_line(cast_seg) do
+        {:ok, line} -> {:cont, {:ok, lines ++ [line], unres}}
+        :unresolvable -> {:cont, {:ok, lines, unres ++ [%{position: cast_seg.position}]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  # One cast segment: a CharacterThroughlineViewVersion whose position 1 pins
+  # that character's ThroughlinePiece.
+  defp resolve_character_line(%{pin_id: nil}), do: :unresolvable
+
+  defp resolve_character_line(cast_seg) do
+    char_vv = read_by_id(Storybox.Stories.CharacterThroughlineViewVersion, cast_seg.pin_id)
+
+    char_view =
+      read_by_id(Storybox.Stories.CharacterThroughlineView, char_vv.character_throughline_view_id)
+
+    piece_seg =
+      char_vv.id
+      |> load_segments(:character_throughline_vv)
+      |> List.first()
+
+    case piece_seg do
+      nil ->
+        :unresolvable
+
+      %{pin_id: nil} ->
+        :unresolvable
+
+      seg ->
+        case fetch_throughline_piece_content(seg.pin_id) do
+          {:ok, _piece, content} ->
+            {:ok, %{character_id: char_view.character_id, content: content}}
+
+          {:error, :content_unavailable} ->
+            {:error, :content_unavailable}
         end
-      end)
-
-    case result do
-      {:error, reason} ->
-        {:error, reason}
-
-      {:ok, controlling_idea, through_lines, unresolvable} ->
-        {:ok,
-         %{
-           story_id: story.id,
-           throughline_view_id: view.id,
-           version_number: vv.version_number,
-           inserted_at: vv.inserted_at,
-           resolved: unresolvable == [],
-           unresolvable: unresolvable,
-           controlling_idea: controlling_idea,
-           through_lines: through_lines
-         }}
     end
   end
 
@@ -1723,11 +1771,10 @@ defmodule StoryboxWeb.ApiController do
   end
 
   # Writes a ThroughlinePiece version (the Story's controlling idea when
-  # `character_id` is nil, else that character's through-line) then cuts a new
-  # Through-line ViewVersion pinning the full harness — the cut is the approval
-  # act. Unlike the single-piece view cuts, the Through-line VV carries an
-  # explicit, full-snapshot segment list (latest piece per lineage), so the
-  # read path (#184) can assemble the whole harness from one VV.
+  # `character_id` is nil, else that character's through-line) then cuts the
+  # nested harness bottom-up — the cut is the approval act. A character write
+  # cuts that character's view, then the cast view, then the top view; a
+  # story-level write cuts only the top view, carrying the cast pin forward.
   def create_throughline_piece(conn, params) do
     story = conn.assigns.current_story
     content = params["content"]
@@ -1740,7 +1787,7 @@ defmodule StoryboxWeb.ApiController do
       if character_id && is_nil(load_character_for_story(character_id, story.id)) do
         conn |> put_status(404) |> json(%{error: "not found"})
       else
-        with {:ok, _piece} <-
+        with {:ok, piece} <-
                Storybox.Stories.ThroughlinePiece
                |> Ash.ActionInput.for_action(:create_version, %{
                  story_id: story.id,
@@ -1748,17 +1795,7 @@ defmodule StoryboxWeb.ApiController do
                  content: content
                })
                |> Ash.run_action(authorize?: false),
-             {:ok, view} <-
-               Storybox.Stories.ThroughlineView
-               |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
-               |> Ash.run_action(authorize?: false),
-             {:ok, vv} <-
-               Storybox.Stories.ThroughlineViewVersion
-               |> Ash.ActionInput.for_action(:cut, %{
-                 throughline_view_id: view.id,
-                 segments: throughline_segments_for_story(story.id)
-               })
-               |> Ash.run_action(authorize?: false) do
+             {:ok, vv} <- cut_nested_throughline(story, character_id, piece) do
           conn |> put_status(201) |> json(format_cut_vv(vv, :throughline_vv))
         else
           {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
@@ -1767,26 +1804,165 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
-  # Builds the full-snapshot segment list for a Through-line cut: the latest
-  # ThroughlinePiece per lineage (one nil-character controlling idea + one per
-  # character). Runs after :create_version, so the new piece is already its
-  # lineage head. Ordered controlling-idea-first, then by character UUID for
-  # deterministic positions.
-  defp throughline_segments_for_story(story_id) do
-    Storybox.Stories.ThroughlinePiece
-    |> Ash.Query.filter(story_id == ^story_id)
-    |> Ash.Query.sort(version_number: :desc)
+  # Story-level write: only the top view is re-cut. The new controlling-idea
+  # piece takes the story-arc slot; the cast stack's pin is carried forward
+  # untouched — a story-arc edit says nothing about the cast.
+  defp cut_nested_throughline(story, nil, piece) do
+    with {:ok, top_view} <-
+           Storybox.Stories.ThroughlineView
+           |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+           |> Ash.run_action(authorize?: false) do
+      segments =
+        [piece_pin(piece)] ++ List.wrap(existing_top_pin(top_view, :throughline_cast_vv))
+
+      cut_top_throughline(top_view, segments)
+    end
+  end
+
+  # Character write: cut bottom-up. The character's own view picks up the piece
+  # just written (its :cut auto-pins that character's lineage head), the cast
+  # view re-pins that character in place while carrying every other character's
+  # pin forward, and the top view re-pins the cast.
+  defp cut_nested_throughline(story, character_id, _piece) do
+    with {:ok, char_view} <-
+           Storybox.Stories.CharacterThroughlineView
+           |> Ash.ActionInput.for_action(:ensure_for_story_character, %{
+             story_id: story.id,
+             character_id: character_id
+           })
+           |> Ash.run_action(authorize?: false),
+         {:ok, char_vv} <-
+           Storybox.Stories.CharacterThroughlineViewVersion
+           |> Ash.ActionInput.for_action(:cut, %{character_throughline_view_id: char_view.id})
+           |> Ash.run_action(authorize?: false),
+         {:ok, cast_view} <-
+           Storybox.Stories.ThroughlineCastView
+           |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+           |> Ash.run_action(authorize?: false),
+         {:ok, cast_vv} <-
+           Storybox.Stories.ThroughlineCastViewVersion
+           |> Ash.ActionInput.for_action(:cut, %{
+             throughline_cast_view_id: cast_view.id,
+             segments: build_cast_segments(cast_view, char_view.id, char_vv)
+           })
+           |> Ash.run_action(authorize?: false),
+         {:ok, top_view} <-
+           Storybox.Stories.ThroughlineView
+           |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+           |> Ash.run_action(authorize?: false) do
+      segments =
+        List.wrap(existing_top_pin(top_view, :throughline_piece)) ++
+          [vv_pin(cast_vv, "throughline_cast_vv")]
+
+      cut_top_throughline(top_view, segments)
+    end
+  end
+
+  defp cut_top_throughline(top_view, segments) do
+    Storybox.Stories.ThroughlineViewVersion
+    |> Ash.ActionInput.for_action(:cut, %{
+      throughline_view_id: top_view.id,
+      segments: segments
+    })
+    |> Ash.run_action(authorize?: false)
+  end
+
+  # The cast stack's new segment list: the changed character re-pinned at the
+  # position it already held, every other character carried forward unchanged.
+  # A character not yet in the cast is appended, which is how cast order is
+  # established — first write wins the slot, and no later write disturbs it.
+  defp build_cast_segments(cast_view, char_view_id, new_char_vv) do
+    case latest_cast_vv(cast_view.id) do
+      nil ->
+        [vv_pin(new_char_vv, "throughline_vv")]
+
+      latest ->
+        existing = load_segments(latest.id, :throughline_cast_vv)
+        pinned = load_character_throughline_vvs(existing)
+
+        {carried, replaced?} =
+          Enum.map_reduce(existing, false, fn seg, replaced? ->
+            case Map.get(pinned, seg.pin_id) do
+              %{character_throughline_view_id: ^char_view_id} ->
+                {vv_pin(new_char_vv, "throughline_vv"), true}
+
+              _ ->
+                {segment_pin(seg), replaced?}
+            end
+          end)
+
+        if replaced?,
+          do: carried,
+          else: carried ++ [vv_pin(new_char_vv, "throughline_vv")]
+    end
+  end
+
+  defp load_character_throughline_vvs(segments) do
+    ids = segments |> Enum.map(& &1.pin_id) |> Enum.reject(&is_nil/1)
+
+    Storybox.Stories.CharacterThroughlineViewVersion
+    |> Ash.Query.filter(id in ^ids)
     |> Ash.read!(authorize?: false)
-    |> Enum.group_by(& &1.character_id)
-    |> Enum.map(fn {_char_id, pieces} -> hd(pieces) end)
-    |> Enum.sort_by(fn p -> if is_nil(p.character_id), do: "", else: p.character_id end)
-    |> Enum.map(fn piece ->
-      %{
-        "pin_id" => piece.id,
-        "pin_type" => "throughline_piece",
-        "pin_version_at_creation" => piece.version_number
-      }
-    end)
+    |> Map.new(fn vv -> {vv.id, vv} end)
+  end
+
+  defp latest_cast_vv(cast_view_id) do
+    Storybox.Stories.ThroughlineCastViewVersion
+    |> Ash.Query.filter(throughline_cast_view_id == ^cast_view_id)
+    |> Ash.Query.sort(version_number: :desc)
+    |> Ash.Query.limit(1)
+    |> Ash.read!(authorize?: false)
+    |> List.first()
+  end
+
+  # The segment of the given pin type on the top view's latest version, as a
+  # cut-ready map — nil when there is no such version or no such pin yet.
+  defp existing_top_pin(top_view, pin_type) do
+    latest =
+      Storybox.Stories.ThroughlineViewVersion
+      |> Ash.Query.filter(throughline_view_id == ^top_view.id)
+      |> Ash.Query.sort(version_number: :desc)
+      |> Ash.Query.limit(1)
+      |> Ash.read!(authorize?: false)
+      |> List.first()
+
+    case latest do
+      nil ->
+        nil
+
+      vv ->
+        vv.id
+        |> load_segments(:throughline_vv)
+        |> Enum.find(fn seg -> seg.pin_type == pin_type end)
+        |> case do
+          nil -> nil
+          seg -> segment_pin(seg)
+        end
+    end
+  end
+
+  defp piece_pin(piece) do
+    %{
+      "pin_id" => piece.id,
+      "pin_type" => "throughline_piece",
+      "pin_version_at_creation" => piece.version_number
+    }
+  end
+
+  defp vv_pin(vv, pin_type) do
+    %{
+      "pin_id" => vv.id,
+      "pin_type" => pin_type,
+      "pin_version_at_creation" => vv.version_number
+    }
+  end
+
+  defp segment_pin(seg) do
+    %{
+      "pin_id" => seg.pin_id,
+      "pin_type" => seg.pin_type && Atom.to_string(seg.pin_type),
+      "pin_version_at_creation" => seg.pin_version_at_creation
+    }
   end
 
   # Returns the raw content of one specific Piece version, addressed by its
