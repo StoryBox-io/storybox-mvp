@@ -13,7 +13,9 @@ defmodule Storybox.Stories.Segment do
     :story_script_vv,
     :character_vv,
     :world_vv,
-    :throughline_vv
+    :throughline_vv,
+    :character_throughline_vv,
+    :throughline_cast_vv
   ]
 
   @piece_pin_types [
@@ -221,6 +223,20 @@ defmodule Storybox.Stories.Segment do
     |> Enum.max(fn -> nil end)
   end
 
+  def pin_target_latest_version(%{pin_type: :throughline_vv, pin_id: pin_id})
+      when not is_nil(pin_id) do
+    pinned =
+      Storybox.Stories.CharacterThroughlineViewVersion
+      |> Ash.Query.filter(id == ^pin_id)
+      |> Ash.read_one!(authorize?: false)
+
+    Storybox.Stories.CharacterThroughlineViewVersion
+    |> Ash.Query.filter(character_throughline_view_id == ^pinned.character_throughline_view_id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(& &1.version_number)
+    |> Enum.max(fn -> nil end)
+  end
+
   def pin_target_latest_version(%{pin_type: :character_piece, pin_id: pin_id})
       when not is_nil(pin_id) do
     pinned =
@@ -288,6 +304,10 @@ defmodule Storybox.Stories.Segment do
   defp pin_module!(:character_piece), do: Storybox.Stories.CharacterPiece
   defp pin_module!(:world_piece), do: Storybox.Stories.WorldPiece
   defp pin_module!(:throughline_piece), do: Storybox.Stories.ThroughlinePiece
+
+  # A :throughline_vv pin targets a per-character through-line view version —
+  # the level the cast stack pins — not the top-level ThroughlineViewVersion.
+  defp pin_module!(:throughline_vv), do: Storybox.Stories.CharacterThroughlineViewVersion
 
   defp pin_module!(pin_type) when pin_type in @pin_types do
     raise ArgumentError,

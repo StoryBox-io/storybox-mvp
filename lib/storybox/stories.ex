@@ -34,6 +34,10 @@ defmodule Storybox.Stories do
     resource Storybox.Stories.ThroughlinePiece
     resource Storybox.Stories.ThroughlineView
     resource Storybox.Stories.ThroughlineViewVersion
+    resource Storybox.Stories.CharacterThroughlineView
+    resource Storybox.Stories.CharacterThroughlineViewVersion
+    resource Storybox.Stories.ThroughlineCastView
+    resource Storybox.Stories.ThroughlineCastViewVersion
     resource Storybox.Stories.Task
   end
 end
