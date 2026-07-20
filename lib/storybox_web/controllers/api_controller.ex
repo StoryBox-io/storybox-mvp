@@ -1580,6 +1580,185 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  # Place a character's through-line view in the cast stack at "position",
+  # shifting the rest down. Position in the stack *is* evaluation priority, so
+  # it is required rather than defaulting to the tail — appending is already
+  # what a first arc write does, and this op exists to place.
+  def cast_insert(conn, %{"char_id" => char_id} = params) do
+    story = conn.assigns.current_story
+
+    with {:character, ch} when not is_nil(ch) <-
+           {:character, load_character_for_story(char_id, story.id)},
+         {:position, {:ok, position}} <- {:position, parse_cast_position(params, "position")},
+         {:char_view, cv} when not is_nil(cv) <-
+           {:char_view, load_character_arc_head(story.id, char_id)},
+         cast_view = ensure_cast_view!(story.id),
+         entries = Storybox.Stories.ThroughlineCastView.ordered_entries(cast_view.id),
+         {:existing, nil} <- {:existing, find_cast_entry(entries, char_id)},
+         {:range, true} <- {:range, position <= length(entries) + 1} do
+      run_cast_op(conn, story, 201, char_id, :insert_entry, %{
+        throughline_cast_view_id: cast_view.id,
+        character_id: char_id,
+        position: position
+      })
+    else
+      {:character, nil} ->
+        conn |> put_status(404) |> json(%{error: "not found"})
+
+      {:position, {:error, msg}} ->
+        conn |> put_status(400) |> json(%{error: msg})
+
+      {:char_view, nil} ->
+        conn |> put_status(422) |> json(%{error: "character has no through-line view"})
+
+      {:existing, _entry} ->
+        conn |> put_status(409) |> json(%{error: "character already in cast"})
+
+      {:range, false} ->
+        conn |> put_status(422) |> json(%{error: "position out of range"})
+    end
+  end
+
+  # Move a character already in the cast stack to a new priority.
+  def cast_reorder(conn, %{"char_id" => char_id} = params) do
+    story = conn.assigns.current_story
+
+    with {:character, ch} when not is_nil(ch) <-
+           {:character, load_character_for_story(char_id, story.id)},
+         {:position, {:ok, new_position}} <-
+           {:position, parse_cast_position(params, "new_position")},
+         {:cast_view, cast_view} when not is_nil(cast_view) <-
+           {:cast_view, load_cast_view(story.id)},
+         entries = Storybox.Stories.ThroughlineCastView.ordered_entries(cast_view.id),
+         {:existing, entry} when not is_nil(entry) <-
+           {:existing, find_cast_entry(entries, char_id)},
+         {:range, true} <- {:range, new_position <= length(entries)} do
+      run_cast_op(conn, story, 200, char_id, :reorder_entry, %{
+        throughline_cast_view_id: cast_view.id,
+        character_id: char_id,
+        new_position: new_position
+      })
+    else
+      {:character, nil} ->
+        conn |> put_status(404) |> json(%{error: "not found"})
+
+      {:position, {:error, msg}} ->
+        conn |> put_status(400) |> json(%{error: msg})
+
+      {:cast_view, nil} ->
+        conn |> put_status(422) |> json(%{error: "character not in cast"})
+
+      {:existing, nil} ->
+        conn |> put_status(422) |> json(%{error: "character not in cast"})
+
+      {:range, false} ->
+        conn |> put_status(422) |> json(%{error: "position out of range"})
+    end
+  end
+
+  # Drop a character from the cast stack, closing the gap. The character's own
+  # through-line view and pieces persist, so a later cast_insert picks that
+  # lineage back up rather than starting a new one.
+  def cast_remove(conn, %{"char_id" => char_id}) do
+    story = conn.assigns.current_story
+
+    with {:character, ch} when not is_nil(ch) <-
+           {:character, load_character_for_story(char_id, story.id)},
+         {:cast_view, cast_view} when not is_nil(cast_view) <-
+           {:cast_view, load_cast_view(story.id)},
+         entries = Storybox.Stories.ThroughlineCastView.ordered_entries(cast_view.id),
+         {:existing, entry} when not is_nil(entry) <-
+           {:existing, find_cast_entry(entries, char_id)} do
+      run_cast_op(conn, story, 200, char_id, :remove_entry, %{
+        throughline_cast_view_id: cast_view.id,
+        character_id: char_id
+      })
+    else
+      {:character, nil} -> conn |> put_status(404) |> json(%{error: "not found"})
+      {:cast_view, nil} -> conn |> put_status(422) |> json(%{error: "character not in cast"})
+      {:existing, nil} -> conn |> put_status(422) |> json(%{error: "character not in cast"})
+    end
+  end
+
+  # Runs one cast structural op, re-pins the top view at the version it cut, and
+  # answers with the character's resulting position — read back off the new
+  # version rather than echoed from the request. A removed character has no
+  # position, so the key is omitted.
+  defp run_cast_op(conn, story, status, char_id, action, args) do
+    with {:ok, cast_vv} <-
+           Storybox.Stories.ThroughlineCastView
+           |> Ash.ActionInput.for_action(action, args)
+           |> Ash.run_action(authorize?: false),
+         {:ok, _top_vv} <- repin_top_with_cast(story, cast_vv) do
+      body =
+        case cast_entry_position(cast_vv.id, char_id) do
+          nil -> %{character_id: char_id}
+          position -> %{character_id: char_id, position: position}
+        end
+
+      conn |> put_status(status) |> json(body)
+    else
+      {:error, _} -> conn |> put_status(500) |> json(%{error: "internal error"})
+    end
+  end
+
+  defp cast_entry_position(cast_vv_id, character_id) do
+    cast_vv_id
+    |> Storybox.Stories.ThroughlineCastView.entries_for_version()
+    |> Enum.find_index(&(&1.character_id == character_id))
+    |> case do
+      nil -> nil
+      index -> index + 1
+    end
+  end
+
+  defp find_cast_entry(entries, character_id) do
+    Enum.find(entries, &(&1.character_id == character_id))
+  end
+
+  defp load_cast_view(story_id) do
+    Storybox.Stories.ThroughlineCastView
+    |> Ash.Query.filter(story_id == ^story_id)
+    |> Ash.read_one!(authorize?: false)
+  end
+
+  defp ensure_cast_view!(story_id) do
+    Storybox.Stories.ThroughlineCastView
+    |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story_id})
+    |> Ash.run_action!(authorize?: false)
+  end
+
+  # The lineage head an insert would pin — nil when the character has no
+  # through-line view, or a view with nothing cut on it yet. Either way there is
+  # nothing for the cast stack to point at.
+  defp load_character_arc_head(story_id, character_id) do
+    char_view =
+      Storybox.Stories.CharacterThroughlineView
+      |> Ash.Query.filter(story_id == ^story_id and character_id == ^character_id)
+      |> Ash.read_one!(authorize?: false)
+
+    case char_view do
+      nil ->
+        nil
+
+      view ->
+        Storybox.Stories.CharacterThroughlineViewVersion
+        |> Ash.Query.filter(character_throughline_view_id == ^view.id)
+        |> Ash.Query.limit(1)
+        |> Ash.read!(authorize?: false)
+        |> List.first()
+    end
+  end
+
+  # Both cast ops take a required, positive integer position; the spine's
+  # optional-position parse would let an insert silently mean "append".
+  defp parse_cast_position(params, key) do
+    case Map.get(params, key) do
+      pos when is_integer(pos) and pos > 0 -> {:ok, pos}
+      _ -> {:error, "#{key} must be a positive integer"}
+    end
+  end
+
   def list_characters(conn, _params) do
     story = conn.assigns.current_story
 
@@ -1845,8 +2024,16 @@ defmodule StoryboxWeb.ApiController do
              throughline_cast_view_id: cast_view.id,
              segments: build_cast_segments(cast_view, char_view.id, char_vv)
            })
-           |> Ash.run_action(authorize?: false),
-         {:ok, top_view} <-
+           |> Ash.run_action(authorize?: false) do
+      repin_top_with_cast(story, cast_vv)
+    end
+  end
+
+  # Re-cuts the top view against a new cast version: the story-arc pin is
+  # carried forward as-is and the cast slot re-pinned. Shared by the character
+  # write path and the cast structural ops — both change only the cast.
+  defp repin_top_with_cast(story, cast_vv) do
+    with {:ok, top_view} <-
            Storybox.Stories.ThroughlineView
            |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
            |> Ash.run_action(authorize?: false) do
