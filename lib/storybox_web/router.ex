@@ -83,6 +83,11 @@ defmodule StoryboxWeb.Router do
     get "/stories/:story_id/characters", ApiController, :list_characters
     get "/stories/:story_id/characters/:char_id", ApiController, :character_detail
     post "/stories/:story_id/characters/:char_id/pieces", ApiController, :create_character_piece
+
+    post "/stories/:story_id/characters/:char_id/cast/insert", ApiController, :cast_insert
+    post "/stories/:story_id/characters/:char_id/cast/reorder", ApiController, :cast_reorder
+    post "/stories/:story_id/characters/:char_id/cast/remove", ApiController, :cast_remove
+
     get "/stories/:story_id/world", ApiController, :world_detail
     post "/stories/:story_id/world/pieces", ApiController, :create_world_piece
     post "/stories/:story_id/throughline/pieces", ApiController, :create_throughline_piece
