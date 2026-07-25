@@ -48,6 +48,12 @@ defmodule Storybox.Stories.TreatmentViewTest do
       |> Ash.Changeset.for_create(:create, %{name: "capital", slug: "capital", story_id: story.id})
       |> Ash.create()
 
+    # Sequences are created off-spine; place them prologue → forest → capital so
+    # the spine order matches the narrative order the cuts assert on.
+    place_on_spine(story.id, seq1.id)
+    place_on_spine(story.id, seq2.id)
+    place_on_spine(story.id, seq3.id)
+
     {:ok, p1a} =
       Storybox.Stories.SequencePiece
       |> Ash.Changeset.for_create(:create, %{

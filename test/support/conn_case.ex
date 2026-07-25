@@ -28,6 +28,7 @@ defmodule StoryboxWeb.ConnCase do
       import Plug.Conn
       import Phoenix.ConnTest
       import StoryboxWeb.ConnCase
+      import Storybox.DataCase, only: [place_on_spine: 2]
     end
   end
 

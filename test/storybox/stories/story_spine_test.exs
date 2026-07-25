@@ -23,11 +23,16 @@ defmodule Storybox.Stories.StorySpineTest do
     %{story: story}
   end
 
+  # Sequences are created off-spine; the helper places each at the spine tail so
+  # these StorySpine tests exercise a populated spine (mirroring how sequences
+  # reach the running order in production).
   defp create_sequence(story_id, slug) do
     {:ok, seq} =
       Sequence
       |> Ash.Changeset.for_create(:create, %{name: slug, slug: slug, story_id: story_id})
       |> Ash.create()
+
+    place_on_spine(story_id, seq.id)
 
     seq
   end
@@ -77,7 +82,7 @@ defmodule Storybox.Stories.StorySpineTest do
   end
 
   describe "add_entry" do
-    test "a created Sequence is auto-registered at max_position + 1", %{story: story} do
+    test "a placed Sequence lands at max_position + 1", %{story: story} do
       spine = spine_for(story.id)
       seq_a = create_sequence(story.id, "seq-a")
       seq_b = create_sequence(story.id, "seq-b")
@@ -91,7 +96,8 @@ defmodule Storybox.Stories.StorySpineTest do
       spine = spine_for(story.id)
       seq = create_sequence(story.id, "seq-b")
 
-      # Drop the auto-registered entry so we can re-add it at an explicit position.
+      # Drop the tail entry the helper placed so we can re-add it at an explicit
+      # position.
       {:ok, _} =
         StorySpine
         |> Ash.ActionInput.for_action(:remove_entry, %{
@@ -114,7 +120,7 @@ defmodule Storybox.Stories.StorySpineTest do
 
     test "rejects a duplicate sequence on the same spine", %{story: story} do
       spine = spine_for(story.id)
-      # Auto-registered on create — adding it again must be rejected.
+      # Placed on the spine by the helper — adding it again must be rejected.
       seq = create_sequence(story.id, "seq-b")
 
       assert {:error, _} =

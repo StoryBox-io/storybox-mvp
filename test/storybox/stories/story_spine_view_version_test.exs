@@ -25,19 +25,22 @@ defmodule Storybox.Stories.StorySpineViewVersionTest do
       |> Ash.Query.filter(story_id == ^story.id)
       |> Ash.read_one!(authorize?: false)
 
-    # Creating a Sequence auto-registers a StorySpine entry, so after these two
-    # the live spine is [seq_b(1), seq_c(2)].
+    # The helper places each Sequence on the spine, so after these two the live
+    # spine is [seq_b(1), seq_c(2)].
     seq_b = create_sequence(story.id, "seq-b")
     seq_c = create_sequence(story.id, "seq-c")
 
     %{story: story, spine: spine, seq_b: seq_b, seq_c: seq_c}
   end
 
+  # Sequences are created off-spine; the helper places each at the spine tail.
   defp create_sequence(story_id, slug) do
     {:ok, seq} =
       Sequence
       |> Ash.Changeset.for_create(:create, %{name: slug, slug: slug, story_id: story_id})
       |> Ash.create()
+
+    place_on_spine(story_id, seq.id)
 
     seq
   end
@@ -107,7 +110,7 @@ defmodule Storybox.Stories.StorySpineViewVersionTest do
         })
         |> Ash.run_action()
 
-      # Auto-registers a new live entry — the prior snapshot must stay frozen.
+      # Places a new live entry — the prior snapshot must stay frozen.
       _seq_d = create_sequence(spine.story_id, "seq-d")
 
       snapshot_after = Enum.map(vv_entries(vv.id), &{&1.sequence_id, &1.position})

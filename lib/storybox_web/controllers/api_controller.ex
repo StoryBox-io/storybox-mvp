@@ -1120,10 +1120,52 @@ defmodule StoryboxWeb.ApiController do
     end
   end
 
+  # Creates a Sequence (name + slug) for a story, OFF the spine — placement is a
+  # separate, explicit op (spine_insert). 409 if the slug is already taken for
+  # this story. Returns the three carried fields {id, slug, name}.
+  def create_sequence(conn, params) do
+    story = conn.assigns.current_story
+    name = params["name"]
+    slug = params["slug"]
+
+    cond do
+      is_nil(name) or name == "" ->
+        conn |> put_status(400) |> json(%{error: "name is required"})
+
+      is_nil(slug) or slug == "" ->
+        conn |> put_status(400) |> json(%{error: "slug is required"})
+
+      true ->
+        case find_sequence_by_slug(story.id, slug) do
+          {:ok, _existing} ->
+            conn |> put_status(409) |> json(%{error: "sequence slug already exists"})
+
+          {:error, :not_found} ->
+            case Storybox.Stories.Sequence
+                 |> Ash.Changeset.for_create(:create, %{
+                   story_id: story.id,
+                   name: name,
+                   slug: slug
+                 })
+                 |> Ash.create(authorize?: false) do
+              {:ok, sequence} ->
+                conn
+                |> put_status(201)
+                |> json(%{id: sequence.id, slug: sequence.slug, name: sequence.name})
+
+              {:error, _} ->
+                conn |> put_status(500) |> json(%{error: "internal error"})
+            end
+
+          {:error, _} ->
+            conn |> put_status(500) |> json(%{error: "internal error"})
+        end
+    end
+  end
+
   # Writes a treatment-prose SequencePiece version, provenance-free. The target
-  # sequence is addressed by slug: if it does not yet exist for this story it is
-  # lazily materialized (Sequence.create's after_action registers its spine
-  # entry, materializing the StorySpine too). `name` defaults to the slug.
+  # sequence is addressed by slug and must already exist for this story — an
+  # unknown slug is a 404, never an implicit create.
   def create_sequence_piece(conn, %{"seq_slug" => seq_slug} = params) do
     story = conn.assigns.current_story
     content = params["content"]
@@ -1131,9 +1173,10 @@ defmodule StoryboxWeb.ApiController do
     if is_nil(content) or content == "" do
       conn |> put_status(400) |> json(%{error: "content is required"})
     else
-      name = Map.get(params, "name", seq_slug)
+      case find_sequence_by_slug(story.id, seq_slug) do
+        {:error, :not_found} ->
+          conn |> put_status(404) |> json(%{error: "sequence not found"})
 
-      case find_or_create_sequence(story.id, seq_slug, name) do
         {:error, _} ->
           conn |> put_status(500) |> json(%{error: "internal error"})
 
@@ -1156,11 +1199,10 @@ defmodule StoryboxWeb.ApiController do
   end
 
   # Writes a synopsis-prose SynopsisPiece version, the top of the rough-to-fine
-  # chain. Addressed by slug like create_sequence_piece: a not-yet-existing
-  # target sequence is lazily materialized (Sequence + spine entry) via
-  # find_or_create_sequence/3. The response is inlined with the three fields the
-  # resource carries — SynopsisPiece has no `weights`, so format_version/1 would
-  # raise. `name` defaults to the slug.
+  # chain. Addressed by slug like create_sequence_piece: the target sequence must
+  # already exist for this story — an unknown slug is a 404. The response is
+  # inlined with the three fields the resource carries — SynopsisPiece has no
+  # `weights`, so format_version/1 would raise.
   def create_synopsis_piece(conn, %{"seq_slug" => seq_slug} = params) do
     story = conn.assigns.current_story
     content = params["content"]
@@ -1168,9 +1210,10 @@ defmodule StoryboxWeb.ApiController do
     if is_nil(content) or content == "" do
       conn |> put_status(400) |> json(%{error: "content is required"})
     else
-      name = Map.get(params, "name", seq_slug)
+      case find_sequence_by_slug(story.id, seq_slug) do
+        {:error, :not_found} ->
+          conn |> put_status(404) |> json(%{error: "sequence not found"})
 
-      case find_or_create_sequence(story.id, seq_slug, name) do
         {:error, _} ->
           conn |> put_status(500) |> json(%{error: "internal error"})
 
@@ -2370,9 +2413,9 @@ defmodule StoryboxWeb.ApiController do
   end
 
   defp parse_required_position(params) do
-    case Map.get(params, "new_position") do
+    case Map.get(params, "position") do
       pos when is_integer(pos) and pos > 0 -> {:ok, pos}
-      _ -> {:error, "new_position must be a positive integer"}
+      _ -> {:error, "position must be a positive integer"}
     end
   end
 
@@ -2424,22 +2467,16 @@ defmodule StoryboxWeb.ApiController do
     |> Ash.run_action(authorize?: false)
   end
 
-  # Resolves a Sequence by slug within a story, creating it if absent. The
-  # create's after_action materializes the StorySpine + entry.
-  defp find_or_create_sequence(story_id, slug, name) do
+  # Resolves an existing Sequence by slug within a story. Read-only: an unknown
+  # slug is {:error, :not_found}, not an implicit create — creation is its own op
+  # (create_sequence/2).
+  defp find_sequence_by_slug(story_id, slug) do
     case Storybox.Stories.Sequence
          |> Ash.Query.filter(slug == ^slug and story_id == ^story_id)
          |> Ash.read_one(authorize?: false) do
-      {:ok, nil} ->
-        Storybox.Stories.Sequence
-        |> Ash.Changeset.for_create(:create, %{story_id: story_id, name: name, slug: slug})
-        |> Ash.create(authorize?: false)
-
-      {:ok, seq} ->
-        {:ok, seq}
-
-      {:error, error} ->
-        {:error, error}
+      {:ok, nil} -> {:error, :not_found}
+      {:ok, seq} -> {:ok, seq}
+      {:error, error} -> {:error, error}
     end
   end
 

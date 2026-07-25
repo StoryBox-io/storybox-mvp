@@ -26,8 +26,8 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
       |> Ash.Changeset.for_create(:create, %{title: "Little Witch", user_id: user.id})
       |> Ash.create()
 
-    # Each Sequence.create registers a StorySpine entry, so after these three the
-    # spine order is [prologue, forest, capital] (creation order).
+    # Sequences are created off-spine and placed explicitly below, so the spine
+    # order is [prologue, forest, capital] (creation order).
     {:ok, seq1} =
       Storybox.Stories.Sequence
       |> Ash.Changeset.for_create(:create, %{
@@ -54,6 +54,10 @@ defmodule Storybox.Stories.SynopsisViewVersionTest do
         story_id: story.id
       })
       |> Ash.create()
+
+    place_on_spine(story.id, seq1.id)
+    place_on_spine(story.id, seq2.id)
+    place_on_spine(story.id, seq3.id)
 
     # seq1 (prologue) has two pieces; seq2 (forest) has one; seq3 (capital) has none
     {:ok, p1a} =

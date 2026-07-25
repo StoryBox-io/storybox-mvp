@@ -69,7 +69,7 @@ defmodule StoryboxWeb.SequencePieceTest do
       refute Map.has_key?(body, "sequence_id")
     end
 
-    test "lazily materializes the sequence and spine entry for an unknown slug", %{
+    test "returns 404 for an unknown slug and creates no sequence or spine entry", %{
       conn: conn,
       story: story,
       raw_token: raw_token
@@ -81,54 +81,27 @@ defmodule StoryboxWeb.SequencePieceTest do
           "content" => "Brand new sequence prose."
         })
 
-      body = json_response(conn, 201)
-      assert body["version_number"] == 1
-      assert body["id"]
+      assert json_response(conn, 404)["error"] == "sequence not found"
 
       sequence =
         Storybox.Stories.Sequence
         |> Ash.Query.filter(story_id == ^story.id and slug == "act-2")
         |> Ash.read_one!(authorize?: false)
 
-      assert sequence
-      assert sequence.name == "act-2"
+      refute sequence
 
+      # The story bootstraps an (empty) spine; the failed write adds no entry.
       spine =
         Storybox.Stories.StorySpine
         |> Ash.Query.filter(story_id == ^story.id)
         |> Ash.read_one!(authorize?: false)
 
-      assert spine
-
-      entry =
+      entry_count =
         Storybox.Stories.StorySpineEntry
-        |> Ash.Query.filter(story_spine_id == ^spine.id and sequence_id == ^sequence.id)
-        |> Ash.read_one!(authorize?: false)
+        |> Ash.Query.filter(story_spine_id == ^spine.id)
+        |> Ash.count!(authorize?: false)
 
-      assert entry
-    end
-
-    test "uses an explicit name when supplied for a lazily-created sequence", %{
-      conn: conn,
-      story: story,
-      raw_token: raw_token
-    } do
-      conn =
-        conn
-        |> put_req_header("authorization", "Bearer #{raw_token}")
-        |> post("/api/stories/#{story.id}/sequences/act-3/pieces", %{
-          "content" => "Named sequence prose.",
-          "name" => "Act Three"
-        })
-
-      assert json_response(conn, 201)
-
-      sequence =
-        Storybox.Stories.Sequence
-        |> Ash.Query.filter(story_id == ^story.id and slug == "act-3")
-        |> Ash.read_one!(authorize?: false)
-
-      assert sequence.name == "Act Three"
+      assert entry_count == 0
     end
 
     test "returns 400 when content is missing", %{

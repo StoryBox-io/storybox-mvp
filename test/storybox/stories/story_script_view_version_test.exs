@@ -50,6 +50,12 @@ defmodule Storybox.Stories.StoryScriptViewVersionTest do
       |> Ash.Changeset.for_create(:create, %{name: "seq_c", slug: "seq-c", story_id: story.id})
       |> Ash.create()
 
+    # Sequences are created off-spine; place them in seq_a → seq_b → seq_c order
+    # so the story-script cut reads them in that order.
+    place_on_spine(story.id, seq_a.id)
+    place_on_spine(story.id, seq_b.id)
+    place_on_spine(story.id, seq_c.id)
+
     {:ok, sv_a} =
       SequenceView
       |> Ash.ActionInput.for_action(:ensure_for_sequence, %{

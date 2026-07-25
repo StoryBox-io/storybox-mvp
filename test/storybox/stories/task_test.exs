@@ -141,6 +141,9 @@ defmodule Storybox.Stories.TaskTest do
         })
         |> Ash.create(authorize?: false)
 
+      # Sequences are created off-spine; place it so the cut produces a segment.
+      place_on_spine(story.id, seq.id)
+
       {:ok, synopsis_view} =
         SynopsisView
         |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
@@ -234,7 +237,7 @@ defmodule Storybox.Stories.TaskTest do
 
   describe "TreatmentViewVersion :cut task generation" do
     test "cut on sequence with no SequencePiece creates a :creation task", %{story: story} do
-      {:ok, _seq} =
+      {:ok, seq} =
         Storybox.Stories.Sequence
         |> Ash.Changeset.for_create(:create, %{
           story_id: story.id,
@@ -242,6 +245,9 @@ defmodule Storybox.Stories.TaskTest do
           slug: "no-piece-seq"
         })
         |> Ash.create(authorize?: false)
+
+      # Sequences are created off-spine; place it so the cut produces a segment.
+      place_on_spine(story.id, seq.id)
 
       {:ok, treatment_view} =
         TreatmentView
@@ -385,7 +391,7 @@ defmodule Storybox.Stories.TaskTest do
         |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
         |> Ash.run_action(authorize?: false)
 
-      # Lazy bootstrap creates no Sequences — make one (it registers a spine entry).
+      # Lazy bootstrap creates no Sequences — make one and place it on the spine.
       {:ok, seq} =
         Storybox.Stories.Sequence
         |> Ash.Changeset.for_create(:create, %{
@@ -394,6 +400,8 @@ defmodule Storybox.Stories.TaskTest do
           slug: "sequence-1"
         })
         |> Ash.create(authorize?: false)
+
+      place_on_spine(story.id, seq.id)
 
       # Create v1 piece for the default sequence
       uri1 = "storybox://test/synopsis/#{seq.id}/v1.fountain"
