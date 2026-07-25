@@ -159,6 +159,10 @@ defmodule Storybox.Stories.ThroughlineSynopsisCascadeTest do
         })
         |> Ash.create()
 
+      # Sequences are created off-spine; place it so the cut produces a segment
+      # whose staleness this test exercises.
+      place_on_spine(story.id, sequence.id)
+
       {:ok, _p1} =
         SynopsisPiece
         |> Ash.Changeset.for_create(:create, %{

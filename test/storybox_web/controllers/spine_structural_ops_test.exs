@@ -12,8 +12,9 @@ defmodule StoryboxWeb.SpineStructuralOpsTest do
   #          │          └── seq_c (spine pos 3)
   #          └── other_story ── other_seq
   #
-  # A Sequence's :create auto-registers it on the Story's spine at the tail, so
-  # seq_a/seq_b/seq_c land at positions 1/2/3. raw_token is scoped to story.
+  # Sequences are created OFF the spine, so the helper explicitly places each on
+  # the Story's spine at the tail, landing seq_a/seq_b/seq_c at positions 1/2/3.
+  # raw_token is scoped to story.
 
   setup do
     {:ok, user} =
@@ -53,11 +54,25 @@ defmodule StoryboxWeb.SpineStructuralOpsTest do
     }
   end
 
+  # Creates a Sequence off-spine, then places it at the tail of the story's
+  # spine (creating the spine if absent), mirroring the old create side effect.
   defp create_sequence(story_id, name, slug) do
     {:ok, seq} =
       Storybox.Stories.Sequence
       |> Ash.Changeset.for_create(:create, %{story_id: story_id, name: name, slug: slug})
       |> Ash.create(authorize?: false)
+
+    {:ok, spine} =
+      Storybox.Stories.StorySpine
+      |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story_id})
+      |> Ash.run_action(authorize?: false)
+
+    Storybox.Stories.StorySpine
+    |> Ash.ActionInput.for_action(:add_entry, %{
+      story_spine_id: spine.id,
+      sequence_id: seq.id
+    })
+    |> Ash.run_action!(authorize?: false)
 
     seq
   end
@@ -218,7 +233,7 @@ defmodule StoryboxWeb.SpineStructuralOpsTest do
         conn
         |> auth(raw_token)
         |> post("/api/stories/#{story.id}/sequences/#{seq_c.id}/spine/reorder", %{
-          "new_position" => 1
+          "position" => 1
         })
 
       body = json_response(conn, 200)
@@ -228,7 +243,7 @@ defmodule StoryboxWeb.SpineStructuralOpsTest do
       assert hd(spine_order(story.id)) == {seq_c.id, 1}
     end
 
-    test "clamps an out-of-range new_position to the last slot", %{
+    test "clamps an out-of-range position to the last slot", %{
       conn: conn,
       story: story,
       seq_a: seq_a,
@@ -238,7 +253,7 @@ defmodule StoryboxWeb.SpineStructuralOpsTest do
         conn
         |> auth(raw_token)
         |> post("/api/stories/#{story.id}/sequences/#{seq_a.id}/spine/reorder", %{
-          "new_position" => 99
+          "position" => 99
         })
 
       body = json_response(conn, 200)
@@ -259,24 +274,24 @@ defmodule StoryboxWeb.SpineStructuralOpsTest do
         conn
         |> auth(raw_token)
         |> post("/api/stories/#{story.id}/sequences/#{seq_a.id}/spine/reorder", %{
-          "new_position" => 1
+          "position" => 1
         })
 
       assert json_response(conn, 422)["error"] == "sequence not on spine"
     end
 
-    test "missing or non-integer new_position returns 400", %{
+    test "missing or non-integer position returns 400", %{
       story: story,
       seq_a: seq_a,
       raw_token: raw_token
     } do
-      for params <- [%{}, %{"new_position" => "x"}, %{"new_position" => 0}] do
+      for params <- [%{}, %{"position" => "x"}, %{"position" => 0}] do
         conn =
           build_conn()
           |> auth(raw_token)
           |> post("/api/stories/#{story.id}/sequences/#{seq_a.id}/spine/reorder", params)
 
-        assert json_response(conn, 400)["error"] == "new_position must be a positive integer"
+        assert json_response(conn, 400)["error"] == "position must be a positive integer"
       end
     end
   end

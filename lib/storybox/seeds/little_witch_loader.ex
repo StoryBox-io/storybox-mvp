@@ -46,8 +46,9 @@ defmodule Storybox.Seeds.LittleWitchLoader do
   defp do_seed!(story) do
     order = read_json("sequence_order.json")["order"]
 
-    # Phase 1 — Sequences (each registers its own StorySpine entry on create, in
-    # `order`, so the later layer cuts read the right live order off the spine).
+    # Phase 1 — Sequences. Creation is now OFF-spine, so each sequence is placed
+    # explicitly on the StorySpine in `order` right after it is created, so the
+    # later layer cuts read the right live order off the spine.
     sequences_by_slug = create_sequences!(story, order)
 
     # Phase 2 — SynopsisPieces
@@ -113,6 +114,11 @@ defmodule Storybox.Seeds.LittleWitchLoader do
   end
 
   defp create_sequences!(story, order) do
+    {:ok, spine} =
+      Storybox.Stories.StorySpine
+      |> Ash.ActionInput.for_action(:ensure_for_story, %{story_id: story.id})
+      |> Ash.run_action(authorize?: false)
+
     for slug <- order, into: %{} do
       synopsis_file = Path.join(@base_path, "synopsis-#{slug}-v1.fountain")
 
@@ -131,6 +137,15 @@ defmodule Storybox.Seeds.LittleWitchLoader do
           slug: slug
         })
         |> Ash.create!(authorize?: false)
+
+      # Sequences are created off-spine; place each explicitly at the tail so the
+      # resulting spine order matches `order`.
+      Storybox.Stories.StorySpine
+      |> Ash.ActionInput.for_action(:add_entry, %{
+        story_spine_id: spine.id,
+        sequence_id: seq.id
+      })
+      |> Ash.run_action!(authorize?: false)
 
       {slug, seq}
     end

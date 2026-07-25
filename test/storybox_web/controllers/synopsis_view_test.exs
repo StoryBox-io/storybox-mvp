@@ -34,11 +34,15 @@ defmodule StoryboxWeb.SynopsisViewTest do
     put_req_header(conn, "authorization", "Bearer #{raw_token}")
   end
 
+  # Sequences are created off-spine; the helper places each at the spine tail so
+  # the cuts below read them in creation order.
   defp create_sequence(story, name, slug) do
     {:ok, seq} =
       Storybox.Stories.Sequence
       |> Ash.Changeset.for_create(:create, %{story_id: story.id, name: name, slug: slug})
       |> Ash.create(authorize?: false)
+
+    place_on_spine(story.id, seq.id)
 
     seq
   end

@@ -17,9 +17,9 @@ defmodule Storybox.Stories.Changes.BootstrapStory do
 
   # Lazy bootstrap: a new Story starts with zero Sequences and no eager layer
   # cuts. We only ensure the Story-wide skeleton — TreatmentView, SynopsisView,
-  # and an (empty) StorySpine. The first Sequence created at any layer
-  # materializes its own spine entry (see Sequence.:create), and layer cuts read
-  # the live spine order on demand.
+  # and an (empty) StorySpine. Sequences are created off-spine and placed onto
+  # the spine explicitly (spine_insert); layer cuts read the live spine order on
+  # demand.
   defp bootstrap(_changeset, story) do
     with {:ok, _tv} <- ensure_treatment_view(story.id),
          {:ok, _sv} <- ensure_synopsis_view(story.id),

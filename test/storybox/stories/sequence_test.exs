@@ -202,13 +202,8 @@ defmodule Storybox.Stories.SequenceTest do
         })
         |> Ash.create()
 
-      # A Sequence owns a StorySpine entry (auto-registered on create); remove it
-      # first so the destroy isn't blocked by the foreign key.
-      Storybox.Stories.StorySpineEntry
-      |> Ash.Query.filter(sequence_id == ^sequence.id)
-      |> Ash.read!(authorize?: false)
-      |> Enum.each(&Ash.destroy!(&1, authorize?: false))
-
+      # Sequences are created off-spine, so there is no StorySpineEntry to clear
+      # before destroying.
       :ok =
         sequence
         |> Ash.Changeset.for_destroy(:destroy)

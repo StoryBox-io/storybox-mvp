@@ -9,7 +9,7 @@ defmodule StoryboxWeb.CutViewVersionTest do
   # an empty StorySpine — no Sequences and no layer VVs.
   #
   # Setup builds on top of that:
-  #   one Sequence (registers a StorySpine entry on create)
+  #   one Sequence, placed on the StorySpine
   #   StoryScriptView
   #   SequenceView for that Sequence
   #   Scene + ScriptView + ScriptPiece v1
@@ -40,8 +40,8 @@ defmodule StoryboxWeb.CutViewVersionTest do
     {:ok, raw_token, _} = ApiToken.generate(%{story_id: story.id, user_id: user.id})
     {:ok, raw_token_other, _} = ApiToken.generate(%{story_id: other_story.id, user_id: user.id})
 
-    # Lazy bootstrap creates no Sequence — make one per story (each registers a
-    # StorySpine entry on create).
+    # Lazy bootstrap creates no Sequence — make one per story and place each on
+    # its story's spine (sequences are created off-spine).
     {:ok, sequence} =
       Storybox.Stories.Sequence
       |> Ash.Changeset.for_create(:create, %{
@@ -51,6 +51,8 @@ defmodule StoryboxWeb.CutViewVersionTest do
       })
       |> Ash.create(authorize?: false)
 
+    place_on_spine(story.id, sequence.id)
+
     {:ok, other_sequence} =
       Storybox.Stories.Sequence
       |> Ash.Changeset.for_create(:create, %{
@@ -59,6 +61,8 @@ defmodule StoryboxWeb.CutViewVersionTest do
         slug: "sequence-1"
       })
       |> Ash.create(authorize?: false)
+
+    place_on_spine(other_story.id, other_sequence.id)
 
     # StoryScriptView is not bootstrapped — create it for the story_script cut test
     {:ok, _story_script_view} =
